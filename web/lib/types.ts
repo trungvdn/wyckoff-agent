@@ -53,9 +53,29 @@ export interface PhaseInfo {
   range_context: string | null;
 }
 
+export interface StrengthSignal {
+  key: string;
+  title: string;
+  text: string;
+  points: number; // -1 | 0 | +1
+}
+
+export interface TrendStrength {
+  side: "demand" | "supply";
+  level: "mạnh" | "trung bình" | "yếu đi";
+  score: number;
+  headline: string;
+  up_volume_pct: number | null; // tỷ trọng khối lượng phiên tăng
+  window: number;
+  signals: StrengthSignal[];
+  correction: { active: boolean; quality: "light" | "normal" | "heavy" | null; verdict: string };
+}
+
 export interface StageInfo {
-  stage: string | null; // Accumulation | Markup | Distribution | Markdown; null = chưa phân định
+  view: "range" | "trend" | "transition"; // trong range: có pha; xu hướng: có sức mạnh cung cầu
+  stage: string | null; // Markup | Markdown; null khi trong range hoặc chưa có xu hướng
   structure_type: string;
+  strength: TrendStrength | null;
   title: string;
   since: string | null;
   reason: string;

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-PROMPT_VERSION = "5"
+PROMPT_VERSION = "6"
 
 SYSTEM_PROMPT = """Bạn là chuyên gia phương pháp Wyckoff, diễn giải kết quả của một hệ thống phát hiện sự kiện \
 cho cổ phiếu Việt Nam. Hệ thống (code) đã tính sẵn mọi con số: pha, sự kiện, mức giá, điểm tin cậy. \
@@ -48,6 +48,8 @@ change_20d_pct, distance_to_support_atr, level_id, ev_0...). Viết bằng từ 
    - summary phải nêu nguyên văn giá trị structure_type của payload.current_stage.
    - structure_type "Transition / Uncertain": nói rõ chưa phân định; nếu có candidates thì nêu đó là các giả thuyết, KHÔNG chọn giả thuyết nào.
    - Nhãn trong stage_history mô tả điều đã xảy ra sau khi range thoát, KHÔNG phải dự báo.
+   - Markup / Markdown có current_stage.strength: diễn giải sức mạnh cung cầu theo headline và các tín hiệu trong đó, KHÔNG đổi mức. \
+Đây là mô tả hiện trạng theo quy tắc, chưa kiểm định bằng backtest, không phải dự báo.
    - Pha A–E và điểm tin cậy hiện vẫn theo sơ đồ tích lũy, kể cả khi giai đoạn không phải tích lũy; nói rõ điểm này nếu có liên quan."""
 
 OUTPUT_SCHEMA: dict[str, Any] = {

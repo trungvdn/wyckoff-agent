@@ -15,7 +15,8 @@ from wyckoff.detectors.trading_range import detect_trading_ranges
 from wyckoff.indicators.core import add_indicators
 from wyckoff.indicators.limits import add_limit_flags
 from wyckoff.phases import CurrentPhase, PhaseResult, classify_phases, current_phase
-from wyckoff.stages import CurrentStage, StageResult, classify_stages, current_stage
+from wyckoff.stages import MARKDOWN, MARKUP, CurrentStage, StageResult, classify_stages, current_stage
+from wyckoff.strength import TrendStrength, trend_strength
 
 
 @dataclass
@@ -58,6 +59,15 @@ class AnalysisResult:
 
     def current_stage(self) -> CurrentStage:
         return current_stage(self.stages)
+
+    def trend_strength(self) -> TrendStrength | None:
+        """Sức mạnh cung cầu tại phiên cuối; None khi không ở Markup / Markdown."""
+        st = self.current_stage()
+        if st.stage not in (MARKUP, MARKDOWN) or st.since is None:
+            return None
+        start = int(self.df.index.searchsorted(st.since))
+        return trend_strength(self.df, self.swings, start, "up" if st.stage == MARKUP else "down", self.cfg.strength,
+                              self.cfg.indicators.sma_period)
 
     def since(self, start: str | pd.Timestamp) -> "AnalysisResult":
         """Chỉ giữ phần từ `start` để báo cáo/vẽ. Phân tích đã chạy trên toàn bộ dữ liệu

@@ -13,7 +13,7 @@ Mã nguồn: API `wyckoff/web/` (FastAPI, `python serve.py`); giao diện `web/`
 | Card, CardHeader, Eyebrow / Button / Skeleton | `components/ui/*` | Dùng chung |
 | Dashboard (lưới 2/3 – 1/3, hàng dưới) | `components/dashboard/Dashboard.tsx` | Server |
 | PriceChart (Lightweight Charts: zoom, kéo, nút khoảng thời gian, bàn phím); chartPrimitives (vùng giao dịch, nhãn sự kiện) | `components/dashboard/PriceChart.tsx` | Client |
-| PhaseCard, EventsCard, Banner | `components/dashboard/*` | Server |
+| StagePhaseCard, EventsCard, Banner | `components/dashboard/*` | Server |
 | ScenarioCard, AskAgent (dùng chung diễn giải qua ExplanationContext) | `components/dashboard/*` | Client |
 | Trang mã: kiểm tra mã, URL chuẩn, gọi API | `app/co-phieu/[symbol]/page.tsx` | Server, động |
 | Đang tải / lỗi / 404 | `loading.tsx`, `error.tsx`, `app/not-found.tsx` | – |

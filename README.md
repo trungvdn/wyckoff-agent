@@ -120,7 +120,18 @@ Trong range chỉ có hai giả thuyết theo xu hướng trước range (tìm t
 - Nhãn đã chốt **mô tả điều đã xảy ra, không phải dự báo**: hướng thoát range gần như 50/50 ở mọi bối cảnh (311 mã).
 - `result.stages.series` là nhãn như biết tại từng phiên, không ghi đè về sau; `result.stages.ranges` là nhãn từng range (`resolved_idx` = phiên chốt).
 - Pha A–E và điểm tin cậy vẫn theo sơ đồ tích lũy, nên pha và giai đoạn có thể khác nhau (ví dụ SOS reclaim đưa về pha D trong khi giai đoạn còn Markdown).
-- Đầu ra: `<MÃ>_stages.csv`; payload v6 thêm `current_stage`, `stage_history`; prompt v5; `summary` của LLM phải nêu đúng loại cấu trúc.
+- Đầu ra: `<MÃ>_stages.csv`; payload v7 thêm `current_stage` (kèm `strength`), `stage_history`; prompt v6; `summary` của LLM phải nêu đúng loại cấu trúc.
+
+**Sức mạnh cung cầu** (`wyckoff/strength.py`, khóa `strength` trong YAML): chỉ có ở Markup (cầu) và Markdown (cung). Chỉ mô tả hiện trạng, **chưa kiểm định bằng backtest**.
+Ba tín hiệu, mỗi tín hiệu −1 / 0 / +1; tổng ≥ 2 mạnh, ≤ −1 yếu đi, còn lại trung bình:
+
+| Tín hiệu | +1 | −1 |
+|---|---|---|
+| Khối lượng 20 phiên | Phiên cùng chiều xu hướng chiếm ≥ 55% | ≤ 45% |
+| Đỉnh đáy (hai đỉnh, hai đáy đã xác nhận trong 60 phiên) | Cả đỉnh và đáy đi đúng chiều | Cả đỉnh và đáy đi ngược chiều |
+| Nhịp điều chỉnh / nhịp hồi (cách cực trị ≥ 2 phiên và ≥ 0,5 ATR) | < 38,2% nhịp trước đó và volume < 1,0x TB20 | ≥ 61,8%, hoặc volume ≥ 1,3x TB20, hoặc close sai phía SMA50 |
+
+**Dashboard** (`StagePhaseCard`, một thẻ): trong range hiện giả thuyết giai đoạn, pha, tiến trình A–E, điểm tin cậy; Markup / Markdown hiện sức mạnh cung cầu và nhịp điều chỉnh, không hiện pha; ngoài range và chưa có xu hướng chỉ nêu trạng thái.
 
 ## Chống look-ahead
 - Chỉ báo causal; swing có độ trễ xác nhận; range xử lý online; Spring xác nhận ở phiên quay lại.
@@ -264,7 +275,7 @@ npm run build && npm start             # bản production (Node >= 20.9)
 Trang phân tích chạy trên server (gọi `WYCKOFF_API_URL`); `loading.tsx` hiện skeleton khi đổi mã / khung. Diễn giải agent,
 hỏi đáp và Phân tích lại chạy ở client qua `/api/*` (Next rewrite sang FastAPI, không cần CORS). Font IBM Plex tự host bằng
 `next/font`. Thành phần: `components/layout` (Header, Footer, trạng thái), `components/ui` (Card, Button, Skeleton),
-`components/dashboard` (PriceChart, PhaseCard, EventsCard, ScenarioCard, AskAgent...).
+`components/dashboard` (PriceChart, StagePhaseCard, EventsCard, ScenarioCard, AskAgent...).
 Biểu đồ dùng TradingView Lightweight Charts: con lăn / pinch để zoom, kéo để xem ngày cũ, nút 3T–Tất cả, phím mũi tên và +/−; API trả toàn bộ lịch sử đã phân tích (`bars`) kèm khung nhìn mặc định (`view_from`) và các đoạn pha (`phase_segments`), vẽ thành dải nền theo pha như báo cáo HTML. Kiểm tra: `npm run lint`, `npm run typecheck`, `npm run build`.
 
 Một màn hình cho một mã: biểu đồ nến + vùng giao dịch + nhãn sự kiện, pha hiện tại và các yếu tố tin cậy, bằng chứng

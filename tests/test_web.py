@@ -113,7 +113,8 @@ def test_api_only_with_strict_csp(client: TestClient):
 def test_analysis_demo(client: TestClient):
     v = client.get("/api/analysis/demo").json()
     assert v["symbol"] == "DEMO" and v["phase"]["title"] == "Pha E"
-    assert v["stage"]["title"] == "Markup" and v["stage"]["structure_type"] == "Trending Up" and v["stage"]["candidates"] == []
+    assert v["stage"]["view"] == "trend" and v["stage"]["title"] == "Markup" and v["stage"]["structure_type"] == "Trending Up"
+    assert v["stage"]["candidates"] == [] and v["stage"]["strength"]["side"] == "demand"
     assert v["stage"]["last_resolved"]["label"] == "Initial Accumulation"
     assert [s["status"] for s in v["phase"]["steps"]] == ["done"] * 4 + ["current"]
     assert {"SC", "AR", "ST", "Spring", "SOS"} <= {e["kind"] for e in v["events"]}

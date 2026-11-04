@@ -76,7 +76,8 @@ def stage_text(cs: dict[str, Any]) -> str:
     """Một câu mô tả giai đoạn hiện tại từ payload.current_stage."""
     stage = f" ({cs['stage']})" if cs["stage"] else ""
     cand = f", giả thuyết {' hoặc '.join(cs['candidates'])}" if cs["candidates"] else ""
-    return f"Giai đoạn: {cs['structure_type']}{stage}{cand}."
+    strength = f" {cs['strength']['headline']}." if cs.get("strength") else ""
+    return f"Giai đoạn: {cs['structure_type']}{stage}{cand}.{strength}"
 
 
 def template_explanation(payload: dict[str, Any]) -> dict[str, Any]:
@@ -100,6 +101,8 @@ def template_explanation(payload: dict[str, Any]) -> dict[str, Any]:
     phase_assessment = (f"Pha {ph} được xác định bởi chuỗi sự kiện của cấu trúc: {ev_line}." if evs
                         else f"Pha {ph}: {vn_dates_in(cp['reason'])}.")
     ctx = [f"Căn cứ giai đoạn: {vn_dates_in(cs['reason'])}."]
+    if cs.get("strength"):
+        ctx += [sig["text"] for sig in cs["strength"]["signals"]]
     if cp["range_context"]:
         pr = f" (lợi suất {vn(cp['range_prior_return_pct'], 1)}% trước range)" if cp["range_prior_return_pct"] is not None else ""
         ctx.append(f"Bối cảnh range: {cp['range_context']}{pr}.")

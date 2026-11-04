@@ -259,6 +259,23 @@ class StageConfig:
 
 
 @dataclass(frozen=True)
+class StrengthConfig:
+    """Sức mạnh cung cầu trong Markup / Markdown (wyckoff/strength.py): chỉ mô tả, chưa kiểm định bằng backtest."""
+    window: int = 20                  # đo tỷ trọng khối lượng trong 20 phiên
+    volume_strong_pct: float = 55.0   # phiên cùng chiều xu hướng chiếm >= 55% khối lượng -> +1
+    volume_weak_pct: float = 45.0     # <= 45% -> -1
+    swing_lookback: int = 60          # chỉ xét đỉnh đáy xác nhận trong 60 phiên
+    min_correction_bars: int = 2      # có nhịp điều chỉnh khi cách cực trị >= 2 phiên ...
+    min_correction_atr: float = 0.5   # ... và >= 0.5 ATR
+    shallow_retrace_pct: float = 38.2 # nông: < 38,2% nhịp trước đó
+    deep_retrace_pct: float = 61.8    # sâu: >= 61,8% nhịp trước đó
+    low_vol_ratio: float = 1.0        # volume nhịp điều chỉnh < 1.0 x TB20 là thấp
+    high_vol_ratio: float = 1.3       # >= 1.3 x TB20 là cao
+    strong_score: int = 2             # tổng điểm >= 2: mạnh
+    weak_score: int = -1              # tổng điểm <= -1: yếu đi
+
+
+@dataclass(frozen=True)
 class PnfConfig:
     box_atr: float = 0.5                # ô P&F = 0.5 ATR lúc range xác nhận (làm tròn lên theo tick)
     reversal: int = 3                   # đảo chiều 3 ô
@@ -286,6 +303,7 @@ class Config:
     pnf: PnfConfig = field(default_factory=PnfConfig)
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
     stage: StageConfig = field(default_factory=StageConfig)
+    strength: StrengthConfig = field(default_factory=StrengthConfig)
 
 
 def _build(cls: type[T], values: dict[str, Any] | None) -> T:

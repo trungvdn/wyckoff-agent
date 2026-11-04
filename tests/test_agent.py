@@ -310,7 +310,7 @@ def test_template_has_no_iso_dates_or_field_names(ohlcv: pd.DataFrame) -> None:
 def test_prompt_rules_present() -> None:
     from wyckoff.agent.prompts import PROMPT_VERSION, SYSTEM_PROMPT
 
-    assert PROMPT_VERSION == "5"
+    assert PROMPT_VERSION == "6"
     assert "market_assessment" in SYSTEM_PROMPT and "CHỈ là tham khảo" in SYSTEM_PROMPT
     assert "dd/mm/yyyy" in SYSTEM_PROMPT and "vol_ratio 2,12 -> \"volume 2,12x TB20\"" in SYSTEM_PROMPT
     assert "tối đa 2 câu" in SYSTEM_PROMPT

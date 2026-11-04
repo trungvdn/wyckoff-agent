@@ -18,7 +18,7 @@ from wyckoff.fmt import vn_g, vn_num, vn_ts
 from wyckoff.phases import CurrentPhase
 from wyckoff.pipeline import AnalysisResult
 
-PAYLOAD_VERSION = "6"   # v6 (04/11/2026): current_stage, stage_history (giai đoạn / loại cấu trúc, chỉ ghi nhận)
+PAYLOAD_VERSION = "7"   # v7 (04/11/2026): current_stage.strength (sức mạnh cung cầu trong Markup / Markdown)
 
 
 def _r(x: Any, d: int = 2) -> Any:
@@ -164,6 +164,7 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
     segs = result.phases.segments[-6:]
     recent_ranges = [r for r in result.ranges][-3:]
     stage = result.current_stage()
+    strength = result.trend_strength()
     resolved = [r for r in result.stages.ranges if r.resolved_idx is not None][-6:]
     payload: dict[str, Any] = {
         "payload_version": PAYLOAD_VERSION,
@@ -183,6 +184,7 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
             "stage": stage.stage, "structure_type": stage.structure_type, "since": _date(stage.since),
             "reason": stage.reason, "prior_stage": stage.prior_stage, "candidates": list(stage.candidates),
             "range_id": stage.range_id,
+            "strength": None if strength is None else strength.to_dict(),
         },
         "stage_history": [
             {"range_id": r.range_id, "prior_stage": r.prior_stage, "stage": r.stage, "structure_type": r.structure_type,

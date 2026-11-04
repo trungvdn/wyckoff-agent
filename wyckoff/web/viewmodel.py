@@ -17,6 +17,7 @@ VIEW_MAX_BARS = 400
 VIEW_LEAD_BARS = 10           # số nến hiển thị trước điểm bắt đầu cấu trúc
 
 PHASE_STEPS = ("A", "B", "C", "D", "E")
+TREND_STAGES = ("Markup", "Markdown")
 EVENT_TEXT = {
     EventType.PS.value: "Hỗ trợ sơ bộ sau nhịp giảm",
     EventType.SC.value: "Bán tháo cao trào",
@@ -78,7 +79,10 @@ def phase_view(phase: str | None) -> dict[str, Any]:
 def stage_view(current: dict[str, Any], history: list[dict[str, Any]]) -> dict[str, Any]:
     """Giai đoạn hiện tại cho dashboard. `current`, `history`: payload.current_stage, payload.stage_history."""
     last = history[-1] if history else None
-    return {**current, "title": current["stage"] or "Chưa phân định",
+    in_range = current["range_id"] is not None
+    view = "range" if in_range else "trend" if current["stage"] in TREND_STAGES else "transition"
+    title = {"range": " hoặc ".join(current["candidates"]), "trend": current["stage"], "transition": "Chưa có xu hướng rõ"}[view]
+    return {**current, "view": view, "title": title,
             "last_resolved": None if last is None else {
                 "range_id": last["range_id"], "label": last["structure_type"] or last["stage"], "date": last["resolved_date"]}}
 
