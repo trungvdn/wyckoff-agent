@@ -55,3 +55,24 @@ Tỷ lệ thoát và `bexcess` 20 / 60 phiên theo từng mức tổng điểm v
 - **H8b gần như tất yếu đạt tiêu chí 2, 3**: SOS / SOW xảy ra sát lúc thoát. Tiêu chí 4 là chốt chặn chính; H8a mới là phép thử đúng nghĩa "sớm".
 - **Trọng số đều và ngưỡng ±2 là lựa chọn đơn giản**, không tối ưu. Trượt không có nghĩa mọi cách dùng bằng chứng đều vô ích, nhưng không được thử lại với ngưỡng khác nếu không đăng ký mới.
 - **Ít cấu trúc có climax**: chỉ 2,6% range gắn với SC, nên SC, ST, BC, ST(d) ít tác động; điểm chủ yếu đến từ Spring, Test và upthrust.
+
+## Kết quả (04/11/2026): KHÔNG CHẤP NHẬN cả H8a và H8b, không hiện nhãn nghiêng trên dashboard
+
+Mẫu 311 mã, 6.794 range từ 2018 (6.643 đã kết thúc), trên bản chép cache đóng băng (`output/h8/cache`). Bảng đầy đủ: `output/h8/report.md` (`scripts/h8_eval.py`, `wyckoff/evidence.py`).
+Không chỉnh tham số nào sau khi xem kết quả. Nền: thoát lên 52,5%, thoát xuống 47,5%.
+
+| Tiêu chí | H8a | H8b |
+|---|---|---|
+| 1. ≥ 300 range mỗi chiều | Đạt (533; 503) | Đạt (2.285; 1.178) |
+| 2. Nghiêng tích lũy thoát lên ≥ 57,5% | **Trượt: 34,3%** | Đạt: 88,1% |
+| 3. Nghiêng phân phối thoát xuống ≥ 52,5% | **Trượt: 24,1%** | Đạt: 87,3% |
+| 4. Trung vị sớm ≥ 10 phiên | Đạt: 21 phiên | **Trượt: 2 phiên** |
+| 5. Chênh bexcess 20 phiên > 0, CI > 0 | **Trượt: −1,54 [−2,57; −0,57]** | **Trượt: −1,02 [−1,57; −0,45]** |
+| 6. Dương ở cả hai giai đoạn | **Trượt: −0,95; −2,22** | **Trượt: −0,89; −1,15** |
+
+Đọc kết quả:
+
+- **H8a ngược chiều lý thuyết, không chỉ là không có tín hiệu**: nghiêng tích lũy lại hay thoát xuống, nghiêng phân phối lại hay thoát lên; chênh lợi suất âm với CI không chứa 0, ở cả hai giai đoạn. Đã kiểm tra độc lập, không phải lỗi dấu (tham khảo: range chỉ có Spring thoát lên 18,0%, n = 1.322; chỉ có UTAD thoát lên 84,2%, n = 787; không có sự kiện nào thoát lên 57,1%, n = 3.895; đối chiếu trực tiếp từ detector trên 20 mã cho cùng chiều).
+- **H8b đúng như dự báo trong phần hạn chế**: tỷ lệ thoát cao vì SOS / SOW gần như trùng lúc thoát (trung vị 2 phiên), không phải tín hiệu sớm. Lợi suất sau tín hiệu cũng không cùng chiều nhãn.
+- **Giải thích khả dĩ, chưa kiểm định**: Spring đòi hỏi giá đã chạm biên dưới, upthrust đòi hỏi giá đã chạm biên trên, nên các sự kiện này có thể chỉ phản ánh giá đang trôi về biên nào và biên đó bị thử nhiều lần. Khi đó đây là đặc điểm của cách định nghĩa range và sự kiện, không nhất thiết là "Wyckoff sai".
+- **Không đảo dấu để dùng**: quy tắc đảo được gợi ý từ chính dữ liệu này, nên chỉ có thể là giả thuyết mới, đăng ký trước và cần mẫu chưa dùng. Nhãn Spring, UTAD và pha C ở cả hai sơ đồ nên được đọc là mô tả sự kiện, không phải bằng chứng về hướng thoát.
