@@ -74,7 +74,7 @@ Các tỉ số được **làm tròn 2 chữ số** trước khi so ngưỡng (0
 | **AR** | Đỉnh pivot (3 phiên mỗi bên) đầu tiên trong 30 phiên sau SC với high ≥ đáy SC + 3 ATR. Xác nhận ở pivot + 3. SC đã failed thì không có AR |
 | **ST** | Sau AR, trong 60 phiên: low ∈ [đáy SC − 0.5 ATR, đáy SC + 1 ATR], volume < 0.7 × volume SC, biên độ < biên độ SC, close ≥ đáy SC; các ST cách nhau ≥ 10 phiên |
 | **LPS** | Sau SOS, trong 20 phiên: low ≥ resistance − 1 ATR, low ≤ close cao nhất từ SOS − 0.5 ATR, vol_ratio < 1.0, spread_atr < 1.0; xác nhận khi trong 3 phiên sau có close > high phiên LPS. Mỗi SOS tối đa một LPS |
-| **UTAD** | Range xác nhận ≥ 20 phiên; phiên đầu tiên high > resistance + max(0.1 ATR, 1 tick); trong ≤ 3 phiên close ≤ resistance − 1 tick với close_pos ≤ 0.5. Là sự kiện cảnh báo: vô hiệu cấu trúc tích lũy |
+| **UTAD** | Range xác nhận ≥ 20 phiên; phiên đầu tiên high > resistance + max(0.1 ATR, 1 tick); trong ≤ 3 phiên close ≤ resistance − 1 tick với close_pos ≤ 0.5. Là sự kiện cảnh báo: vô hiệu cấu trúc tích lũy (`utad.mode: v2`, mặc định). `utad.mode: ut_utad` (H6): upthrust đầu tiên trong range = **UT**, từ lần thứ hai = **UTAD**; chỉ xác nhận khi trong 15 phiên sau phiên quay lại có close < giữa range (close > đỉnh upthrust hoặc hết 15 phiên → candidate INVALIDATED) |
 
 Mặc định **không lọc Spring theo bối cảnh** (nhãn bối cảnh vẫn ghi để LLM đánh giá); bỏ một nhãn khỏi `spring.allowed_contexts` để lọc.
 
@@ -89,7 +89,7 @@ SC/AR/ST gắn vào range khi |SC − phiên bắt đầu range| ≤ 10 phiên v
 | C | Spring (volume thấp, hoặc shakeout + Test) | → D khi SOS |
 | D | SOS (LPS được ghi nhận) | → E khi range thoát lên |
 | E | Range thoát lên (3 close > resistance + 0.5 ATR) | — |
-| invalid | UTAD; range thoát xuống; pha C có close < đáy Spring − 0.5 ATR | cấu trúc mới khi có SC hoặc range mới; → D khi có **SOS reclaim** |
+| invalid | UTAD (hoặc UT/UTAD đã xác nhận yếu kém khi `ut_utad`); range thoát xuống; pha C có close < đáy Spring − 0.5 ATR | cấu trúc mới khi có SC hoặc range mới; → D khi có **SOS reclaim** |
 
 `current_phase()` trả về pha, ngày bắt đầu, support/resistance, ATR, bằng chứng (các sự kiện của cấu trúc) và
 **mức xác nhận / vô hiệu tính sẵn**: A → ST / thủng đáy SC (vùng climax kéo dài, không vô hiệu); B → Spring, SOS / range thoát xuống; C → SOS / đáy Spring − 0.5 ATR;
@@ -258,3 +258,4 @@ nến ngày (chỉ tham khảo); 15 phút / Giờ chưa hỗ trợ.
 - Chưa có xác thực / giới hạn tần suất: mặc định chỉ nghe `127.0.0.1`; cần bổ sung trước khi mở ra Internet.
 - **Giả thuyết H4** (`docs/h4-preregistration.md`, 308 mã): H4a SC hai phiên (`config/h4a.yaml`) và H4b range neo theo SC–AR (`config/h4b.yaml`) – **không chấp nhận**, mặc định tắt. H4b trung tính với thang tin cậy (chênh lệch cao − thấp +1,56 so với +1,55; P = 0,53). Chạy lại: `scripts/parallel_study.py`, `scripts/h4_eval.py`.
 - **Giả thuyết H5** (`docs/h5-preregistration.md`, 311 mã): H5a SOS cần follow-through (`config/h5a.yaml`) và H5b chỉ phiên khóa trần cần follow-through (`config/h5b.yaml`) – **không chấp nhận**, mặc định `same_bar`. H5a: cao − thấp +1,53 so với +1,46 nhưng 2023–nay mức cao 60 phiên −2,03 so với −1,51, P = 0,61. Tham khảo: H5a loại 19% SOS, SOS còn lại 20 phiên +0,59 so với +0,17. Chạy lại: `scripts/parallel_study.py`, `scripts/h5_eval.py`.
+- **Giả thuyết H6** (`docs/h6-preregistration.md`, 311 mã): tách UT / UTAD và chỉ xác nhận khi có yếu kém (`config/h6.yaml`, `utad.mode: ut_utad`) – **không chấp nhận** (trượt tiêu chí 2023–nay: −1,57 so với −1,51), mặc định `v2`. Đạt 4/5: cao − thấp +1,57 so với +1,46, P = 0,82. Tham khảo: upthrust kiểu v2 có lợi suất dương (20 phiên +1,01), UT đã xác nhận −0,14; pha invalid 20 phiên −0,21 so với +0,01. Chạy lại: `scripts/parallel_study.py`, `scripts/h6_eval.py`.

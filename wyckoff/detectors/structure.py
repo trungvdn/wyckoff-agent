@@ -10,9 +10,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from wyckoff.config import ARConfig, LPSConfig, PSConfig, STConfig, UTADConfig
-from wyckoff.detectors.events import _make_event, _rounded
-from wyckoff.detectors.models import Event, EventType, TradingRange
+from wyckoff.config import UTAD_MODES, ARConfig, LPSConfig, PSConfig, STConfig, UTADConfig
+from wyckoff.detectors.events import _candidate, _change, _make_event, _rounded
+from wyckoff.detectors.models import Event, EventStatus, EventType, StatusChange, TradingRange
+from wyckoff.fmt import vn_num
 from wyckoff.detectors.trading_range import RangeAnchor
 from wyckoff.indicators.ticks import tick_size
 
@@ -197,15 +198,41 @@ def detect_lps(
 
 # ------------------------------------------------------------------------- UTAD
 
+def _weakness(
+    df: pd.DataFrame, ret: int, mid: float, highest: float, window: int
+) -> tuple[int | None, StatusChange | None]:
+    """H6: trong (ret, ret + window]: close > đỉnh upthrust -> vô hiệu; close < giữa range -> xác nhận.
+    (None, None) = chưa đủ dữ liệu."""
+    close = df["close"].to_numpy(dtype=float)
+    last = len(df) - 1
+    for j in range(ret + 1, min(ret + window, last) + 1):
+        if close[j] > highest + _EPS:
+            return None, _change(df, EventStatus.INVALIDATED, j,
+                                 f"close {vn_num(close[j])} vượt đỉnh upthrust {vn_num(highest)}: breakout thật")
+        if close[j] < mid - _EPS:
+            return j, None
+    if ret + window <= last:
+        return None, _change(df, EventStatus.INVALIDATED, ret + window,
+                             f"không có close dưới giữa range {vn_num(mid)} trong {window} phiên")
+    return None, None
+
+
 def detect_utad(
     df: pd.DataFrame, ranges: list[TradingRange], cfg: UTADConfig | None = None, exchange: str = "HOSE",
-    decimals: int = 2,
+    decimals: int = 2, candidates: list[Event] | None = None,
 ) -> list[Event]:
-    """UTAD (đối xứng Spring): range đã xác nhận >= min_bars_after_confirm phiên; phiên đầu tiên
+    """Upthrust (đối xứng Spring): range đã xác nhận >= min_bars_after_confirm phiên; phiên đầu tiên
     high > resistance + max(min_penetration_atr x ATR, min_penetration_ticks x tick); trong
     `max_return_bars` phiên (tính cả phiên vượt) có close <= resistance - return_ticks x tick và
-    close_pos <= max_close_pos. Sự kiện tại phiên vượt, xác nhận tại phiên quay lại."""
+    close_pos <= max_close_pos.
+
+    mode v2: mọi upthrust là UTAD; sự kiện tại phiên vượt, xác nhận tại phiên quay lại.
+    mode ut_utad (H6): upthrust đầu tiên trong range = UT, từ lần thứ hai = UTAD; xác nhận khi có yếu kém
+    (`_weakness`); upthrust không quay lại / không xác nhận / chưa đủ dữ liệu vào `candidates`."""
     cfg = cfg or UTADConfig()
+    if cfg.mode not in UTAD_MODES:
+        raise ValueError(f"utad.mode không hợp lệ: {cfg.mode}")
+    split = cfg.mode == "ut_utad"
     r = _rounded(df, decimals)
     high = df["high"].to_numpy(dtype=float)
     close = df["close"].to_numpy(dtype=float)
@@ -215,7 +242,9 @@ def detect_utad(
     out: list[Event] = []
     for rng in ranges:
         res = rng.resistance
+        mid = (rng.support + rng.resistance) / 2
         tick = tick_size(res, exchange)
+        returned = 0      # số upthrust đã quay lại TR trong range này (biết trước phiên b)
         b = rng.confirmed_idx + cfg.min_bars_after_confirm
         while b <= last and rng.known_active_at(b, last):
             if np.isnan(atr_ref[b]) or np.isnan(atr_ref[b - 1]):
@@ -226,24 +255,51 @@ def detect_utad(
             if not (high[b] > res + pen + _EPS and high[b - 1] <= res + prev_pen + _EPS):
                 b += 1
                 continue
+            kind = EventType.UTAD if (not split or returned > 0) else EventType.UT
             ret = None
+            ended: StatusChange | None = None
             for k in range(b, min(b + cfg.max_return_bars, last + 1)):
                 if not rng.known_active_at(k, last):
+                    ended = _change(df, EventStatus.INVALIDATED, k, "range kết thúc trước khi quay lại")
                     break
                 if close[k] <= res - cfg.return_ticks * tick + _EPS and cp[k] <= cfg.max_close_pos:
                     ret = k
                     break
             if ret is None:
+                if split and candidates is not None:
+                    end_k = b + cfg.max_return_bars - 1
+                    if ended is None and end_k <= last:
+                        ended = _change(df, EventStatus.INVALIDATED, end_k,
+                                        f"không đóng cửa lại dưới resistance trong {cfg.max_return_bars} phiên")
+                    hist = [_change(df, EventStatus.DETECTED, b, "vượt resistance")] + ([ended] if ended else [])
+                    det = {"resistance": round(res, 4), "upthrust_no": returned + 1, "context": rng.context}
+                    candidates.append(_candidate(df, kind, b, rng.range_id, det, hist))
                 b += 1
                 continue
+            highest = float(high[b:ret + 1].max())
             details: dict[str, Any] = {
                 "resistance": round(res, 4),
-                "highest_high": float(high[b:ret + 1].max()),
-                "penetration_atr": round(float((high[b:ret + 1].max() - res) / atr_ref[b]), 3),
+                "highest_high": highest,
+                "penetration_atr": round(float((highest - res) / atr_ref[b]), 3),
                 "return_date": df.index[ret].strftime("%Y-%m-%d"),
                 "return_bars": ret - b + 1,
                 "context": rng.context,
             }
-            out.append(_make_event(df, EventType.UTAD, b, ret, rng.range_id, details))
+            returned += 1
+            if not split:
+                out.append(_make_event(df, EventType.UTAD, b, ret, rng.range_id, details))
+                b = ret + 1
+                continue
+            details["upthrust_no"] = returned
+            details["range_mid"] = round(mid, 4)
+            conf, ended = _weakness(df, ret, mid, highest, cfg.weakness_window)
+            if conf is not None:
+                details.update({"weakness_date": df.index[conf].strftime("%Y-%m-%d"),
+                                "weakness_close": float(close[conf])})
+                out.append(_make_event(df, kind, b, conf, rng.range_id, details))
+            elif candidates is not None:
+                hist = [_change(df, EventStatus.DETECTED, b, "vượt resistance")] if ret > b else []
+                hist.append(_change(df, EventStatus.CANDIDATE, ret, "quay lại TR, chờ yếu kém"))
+                candidates.append(_candidate(df, kind, b, rng.range_id, details, hist + ([ended] if ended else [])))
             b = ret + 1
-    return out
+    return sorted(out, key=lambda e: e.idx)

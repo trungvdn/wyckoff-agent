@@ -39,6 +39,7 @@ class EventType(str, Enum):
     ST = "ST"
     LPS = "LPS"
     UTAD = "UTAD"
+    UT = "UT"
 
 
 SPRING_TYPE_LABEL = {"low_volume": "volume thấp", "shakeout": "shakeout"}

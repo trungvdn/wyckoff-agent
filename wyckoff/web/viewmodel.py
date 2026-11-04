@@ -28,10 +28,11 @@ EVENT_TEXT = {
     EventType.SOS.value: "Phá kháng cự với volume cao",
     EventType.LPS.value: "Điều chỉnh nông, volume cạn",
     EventType.UTAD.value: "Phá đỉnh giả – cảnh báo phân phối",
+    EventType.UT.value: "Phá đỉnh giả rồi yếu đi – cảnh báo nguồn cung",
 }
 RECLAIM_TEXT = "Lấy lại kháng cự với volume cao sau khi thoát xuống"
 # Sự kiện gắn nhãn phía trên nến; còn lại phía dưới
-EVENTS_ABOVE = {EventType.AR.value, EventType.SOS.value, EventType.UTAD.value}
+EVENTS_ABOVE = {EventType.AR.value, EventType.SOS.value, EventType.UTAD.value, EventType.UT.value}
 
 
 def _f(x: Any, d: int = 2) -> float | None:

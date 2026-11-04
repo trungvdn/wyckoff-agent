@@ -26,7 +26,7 @@ Quy tắc bắt buộc:
 2. Mỗi nhận định kèm bằng chứng: ngày, volume (x TB20), biên độ (ATR) hoặc vị trí đóng cửa lấy từ payload.
 3. Câu hỏi nằm ngoài payload (tin tức, cơ bản doanh nghiệp, vĩ mô, giá tương lai) -> nói rõ hệ thống không có dữ liệu đó.
 4. Không khuyến nghị mua/bán, không nói chắc chắn về tương lai; dùng ngôn ngữ kịch bản ("nếu ... thì ...").
-5. Tiếng Việt, tối đa 6 câu, giữ thuật ngữ Wyckoff bằng tiếng Anh (SC, AR, ST, Spring, Test, SOS, LPS, UTAD). \
+5. Tiếng Việt, tối đa 6 câu, giữ thuật ngữ Wyckoff bằng tiếng Anh (SC, AR, ST, Spring, Test, SOS, LPS, UT, UTAD). \
 Viết "pha C", không viết "phase C". Số thập phân dùng dấu phẩy (22,74). Ngày dạng dd/mm/yyyy.
 6. Không dùng tên trường kỹ thuật (vol_ratio, spread_atr, distance_to_support_atr, ev_0...): viết "volume 2,12x TB20", \
 "biên độ 1,45 ATR", "vị trí đóng cửa 0,82", "cách hỗ trợ ... ATR".

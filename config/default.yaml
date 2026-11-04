@@ -113,6 +113,8 @@ utad:
   max_return_bars: 3         # đóng cửa lại <= resistance - 1 tick, close_pos <= 0.5
   return_ticks: 1
   max_close_pos: 0.5
+  mode: v2                   # H6: v2 (mọi upthrust = UTAD, vô hiệu ngay) | ut_utad (UT lần đầu / UTAD từ lần 2, chờ yếu kém)
+  weakness_window: 15        #   ut_utad: trong 15 phiên sau phiên quay lại, close < giữa range -> xác nhận
 
 confidence:                  # thang tin cậy v2 (hiệu chỉnh theo backtest 03/11/2026)
   sc: 1

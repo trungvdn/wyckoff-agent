@@ -13,7 +13,7 @@ Quy tắc vô hiệu hóa sau xác nhận (trong `lifecycle.watch_bars` phiên):
 - Spring: close < đáy Spring - phase.spring_invalid_atr x ATR; Test của Spring đó INVALIDATED theo.
 - SOS: close dưới mức vô hiệu pha D theo phase.d_invalid_mode (range_mid | support | lps_or_res_atr).
 - LPS: close < đáy LPS - lifecycle.lps_invalid_atr x ATR.
-AR, ST, UTAD, SC failed: chưa có quy tắc vô hiệu (giữ CONFIRMED).
+AR, ST, UT, UTAD, SC failed: chưa có quy tắc vô hiệu sau xác nhận (giữ CONFIRMED).
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ _EPS = 1e-9
 _CODE = {
     EventType.SC: "SC", EventType.SC_FAILED: "SCFAIL", EventType.SPRING: "SPRING", EventType.TEST: "TEST",
     EventType.SOS: "SOS", EventType.PS: "PS", EventType.AR: "AR", EventType.ST: "ST", EventType.LPS: "LPS",
-    EventType.UTAD: "UTAD",
+    EventType.UTAD: "UTAD", EventType.UT: "UT",
 }
 
 
@@ -89,7 +89,7 @@ def _first_close_below(
 
 
 def _confirmed_history(df: pd.DataFrame, e: Event) -> list[StatusChange]:
-    """Các mốc trước xác nhận chỉ ghi cho loại có ghi cả candidate thất bại (SC, Spring, SOS follow-through) –
+    """Các mốc trước xác nhận chỉ ghi cho loại có ghi cả candidate thất bại (SC, Spring, SOS follow-through, UT/UTAD ut_utad) –
     nếu không, việc 'biết' DETECTED ở phiên event sẽ là nhìn trước kết quả."""
     ch = lambda s, i, r="": StatusChange(s, i, df.index[i], r)  # noqa: E731
     h: list[StatusChange] = []
@@ -97,6 +97,11 @@ def _confirmed_history(df: pd.DataFrame, e: Event) -> list[StatusChange]:
         h.append(ch(EventStatus.DETECTED, e.idx, "climax đóng cửa thấp, chờ xác nhận vùng"))
     elif e.kind == EventType.SOS and "follow_through" in e.details:
         h.append(ch(EventStatus.DETECTED, e.idx, "breakout, chờ follow-through"))
+    elif e.kind in (EventType.UT, EventType.UTAD) and "weakness_date" in e.details:
+        ret = _loc(df, e.details["return_date"])
+        if ret > e.idx:
+            h.append(ch(EventStatus.DETECTED, e.idx, "vượt resistance"))
+        h.append(ch(EventStatus.CANDIDATE, ret, "quay lại TR, chờ yếu kém"))
     elif e.kind == EventType.SPRING:
         rec = _loc(df, e.details["recovery_date"])
         if rec > e.idx:

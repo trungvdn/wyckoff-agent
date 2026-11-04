@@ -19,6 +19,7 @@ EVENT_STYLE: dict[EventType, dict[str, str]] = {
     EventType.ST: {"color": "#8c564b", "symbol": "circle-open", "anchor": "low"},
     EventType.LPS: {"color": "#2ca02c", "symbol": "diamond", "anchor": "low"},
     EventType.UTAD: {"color": "#d62728", "symbol": "triangle-down-open", "anchor": "high"},
+    EventType.UT: {"color": "#e377c2", "symbol": "triangle-down-open", "anchor": "high"},
 }
 
 

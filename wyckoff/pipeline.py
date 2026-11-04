@@ -94,7 +94,7 @@ def analyze(ohlcv: pd.DataFrame, cfg: Config | None = None) -> AnalysisResult:
         + detect_ps(df, sc_events, cfg.ps, decimals=dec)
         + detect_st(df, sc_events, ar, cfg.st)
         + detect_lps(df, ranges, sos, cfg.lps, decimals=dec)
-        + detect_utad(df, ranges, cfg.utad, exchange=cfg.data.exchange, decimals=dec)
+        + detect_utad(df, ranges, cfg.utad, exchange=cfg.data.exchange, decimals=dec, candidates=candidates)
     )
     events.sort(key=lambda e: (e.idx, e.kind.value))
     events, candidates = annotate(df, events, candidates, ranges, cfg)

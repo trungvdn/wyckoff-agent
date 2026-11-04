@@ -22,7 +22,7 @@ chỉ lấy từ payload.market. Nhãn bối cảnh range ("sau nhịp giảm", 
 đà giá 120 phiên trước range, KHÔNG suy ra đây là accumulation hay distribution. Yếu tố 0 điểm (vd. Spring, Test) \
 là mốc pha nhưng không cộng tin cậy; nếu nêu thì nói rõ là không cộng điểm.
 5. Mức tin cậy do code tính (payload.confidence); bạn giải thích các yếu tố, KHÔNG đổi mức.
-6. Viết tiếng Việt, ngắn gọn, giữ nguyên thuật ngữ Wyckoff bằng tiếng Anh (SC, AR, ST, Spring, Test, SOS, LPS, UTAD). \
+6. Viết tiếng Việt, ngắn gọn, giữ nguyên thuật ngữ Wyckoff bằng tiếng Anh (SC, AR, ST, Spring, Test, SOS, LPS, UT, UTAD). \
 Viết "pha C", không viết "phase C". Số thập phân dùng dấu phẩy (22,74). Ngày viết dạng dd/mm/yyyy (09/10/2026), \
 KHÔNG dùng dạng 2026-10-09.
 9. KHÔNG dùng tên trường kỹ thuật của payload trong văn bản (vol_ratio, spread_atr, penetration_atr, avg_vol_ratio_5d, \

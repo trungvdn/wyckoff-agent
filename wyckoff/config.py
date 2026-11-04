@@ -159,6 +159,14 @@ class UTADConfig:
     max_return_bars: int = 3          # trong 3 phiên đóng cửa <= resistance - 1 tick ...
     return_ticks: int = 1
     max_close_pos: float = 0.5        # ... với close_pos <= 0.5
+    # H6 (quy chuẩn 04/11/2026 mục 5.5–5.6): v2 = mọi upthrust là UTAD, xác nhận tại phiên quay lại;
+    # ut_utad = upthrust đầu tiên trong range là UT, từ lần thứ hai là UTAD; xác nhận khi trong weakness_window phiên
+    # sau phiên quay lại có close < giữa range, vô hiệu khi close > đỉnh upthrust hoặc hết thời hạn.
+    mode: str = "v2"
+    weakness_window: int = 15
+
+
+UTAD_MODES = ("v2", "ut_utad")
 
 
 @dataclass(frozen=True)
