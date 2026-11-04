@@ -7,7 +7,8 @@ import pandas as pd
 
 from wyckoff.config import Config
 from wyckoff.detectors.events import detect_selling_climax, detect_sos, detect_sos_reclaim, detect_spring
-from wyckoff.detectors.lifecycle import annotate, snapshot
+from wyckoff.detectors.distribution import detect_distribution
+from wyckoff.detectors.lifecycle import annotate, annotate_distribution, snapshot
 from wyckoff.detectors.models import Event, EventStatus, EventType, Swing, TradingRange
 from wyckoff.detectors.structure import detect_ar, detect_lps, detect_ps, detect_st, detect_utad, sc_ar_anchors
 from wyckoff.detectors.swings import find_swings
@@ -29,6 +30,7 @@ class AnalysisResult:
     stages: StageResult
     cfg: Config
     candidates: list[Event] = field(default_factory=list)   # chưa/không xác nhận – không dùng cho pha/tin cậy
+    distribution: list[Event] = field(default_factory=list) # BC, AR(d), ST(d), SOW, LPSY: chỉ ghi nhận, không dùng cho pha/tin cậy
 
     def structure_of(self) -> dict[str, int]:
         """event_id -> structure_id (cấu trúc của state machine pha)."""
@@ -44,6 +46,9 @@ class AnalysisResult:
         """Event + candidate đã biết tại phiên t (mặc định phiên cuối) với trạng thái lúc đó."""
         i = len(self.df) - 1 if t is None else t if isinstance(t, int) else int(self.df.index.get_loc(pd.Timestamp(t)))
         return snapshot(self.events, self.candidates, i)
+
+    def distribution_frame(self) -> pd.DataFrame:
+        return pd.DataFrame([e.to_dict() for e in self.distribution])
 
     def ranges_frame(self) -> pd.DataFrame:
         return pd.DataFrame([r.__dict__ for r in self.ranges])
@@ -93,6 +98,7 @@ class AnalysisResult:
             stages=st,
             cfg=self.cfg,
             candidates=[e for e in self.candidates if e.date >= ts],
+            distribution=[e for e in self.distribution if e.date >= ts],
         )
 
 
@@ -125,8 +131,11 @@ def analyze(ohlcv: pd.DataFrame, cfg: Config | None = None) -> AnalysisResult:
     events, candidates = annotate(df, events, candidates, ranges, cfg)
     phases = classify_phases(df, ranges, events, cfg.phase, cfg.ranges)
     stages = classify_stages(df, ranges, cfg.stage, cfg.indicators.sma_period)
+    distribution = annotate_distribution(
+        df, detect_distribution(df, ranges, cfg.distribution, dec, cfg.data.price_limit, cfg.data.limit_tolerance), ranges, cfg
+    )
     return AnalysisResult(df=df, swings=swings, ranges=ranges, events=events, phases=phases, stages=stages, cfg=cfg,
-                          candidates=candidates)
+                          candidates=candidates, distribution=distribution)
 
 
 __all__ = ["AnalysisResult", "analyze", "EventType"]

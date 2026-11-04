@@ -32,7 +32,8 @@ _EPS = 1e-9
 _CODE = {
     EventType.SC: "SC", EventType.SC_FAILED: "SCFAIL", EventType.SPRING: "SPRING", EventType.TEST: "TEST",
     EventType.SOS: "SOS", EventType.PS: "PS", EventType.AR: "AR", EventType.ST: "ST", EventType.LPS: "LPS",
-    EventType.UTAD: "UTAD", EventType.UT: "UT",
+    EventType.UTAD: "UTAD", EventType.UT: "UT", EventType.BC: "BC", EventType.BC_FAILED: "BCFAIL",
+    EventType.AR_D: "ARD", EventType.ST_D: "STD", EventType.SOW: "SOW", EventType.LPSY: "LPSY",
 }
 
 
@@ -50,6 +51,10 @@ def base_event_id(e: Event, ranges: dict[int, TradingRange]) -> str:
         parts.append(f"SPRING{_ymd(e.details['spring_date'])}")
     if "sos_date" in e.details:
         parts.append(f"SOS{_ymd(e.details['sos_date'])}")
+    if "bc_date" in e.details:
+        parts.append(f"BC{_ymd(e.details['bc_date'])}")
+    if "sow_date" in e.details:
+        parts.append(f"SOW{_ymd(e.details['sow_date'])}")
     if e.kind == EventType.SOS and e.details.get("reclaim"):
         parts.append("RECLAIM")
     return "-".join(parts)
@@ -208,6 +213,58 @@ def annotate(
                            test_of_event_id=test_of.get(e.event_id)))
     cands = sorted(cands, key=lambda c: (c.idx, c.kind.value))
     return out, cands
+
+
+def annotate_distribution(df: pd.DataFrame, events: list[Event], ranges: list[TradingRange], cfg: Config) -> list[Event]:
+    """Vòng đời sự kiện phía phân phối, đối xứng với `annotate`. Trong `lifecycle.watch_bars` phiên sau xác nhận:
+    BC <- có BC failed; SOW <- close > giữa range: breakdown thất bại; LPSY <- close > đỉnh LPSY + distribution.lpsy_invalid_atr x ATR.
+    AR(d), ST(d), BC failed: chưa có quy tắc vô hiệu."""
+    rng_by_id = {r.range_id: r for r in ranges}
+    atr_ref = df["atr_ref"].to_numpy(dtype=float)
+    close = df["close"].to_numpy(dtype=float)
+    last = len(df) - 1
+    watch = cfg.lifecycle.watch_bars
+    evs = _assign_ids([replace(e, history=(StatusChange(EventStatus.CONFIRMED, e.confirmed_idx, df.index[e.confirmed_idx]),))
+                       for e in events], rng_by_id)
+    bc_by = {e.date.strftime("%Y-%m-%d"): e for e in evs if e.kind == EventType.BC}
+    sow_by = {(e.range_id, e.date.strftime("%Y-%m-%d")): e for e in evs if e.kind == EventType.SOW}
+    related: dict[str, list[str]] = {e.event_id: [] for e in evs}
+    test_of: dict[str, str] = {}
+    inval: dict[str, StatusChange] = {}
+
+    def first_above(start: int, level) -> int | None:  # noqa: ANN001
+        return next((t for t in range(start + 1, min(start + watch, last) + 1)
+                     if not np.isnan(level(t)) and close[t] > level(t) + _EPS), None)
+
+    for e in evs:
+        parent = None
+        if e.kind in (EventType.AR_D, EventType.BC_FAILED, EventType.ST_D):
+            parent = bc_by.get(e.details.get("bc_date", ""))
+        elif e.kind == EventType.LPSY:
+            parent = sow_by.get((e.range_id, e.details.get("sow_date", "")))
+        if parent is not None:
+            related[e.event_id].append(parent.event_id)
+            related[parent.event_id].append(e.event_id)
+            if e.kind == EventType.ST_D:
+                test_of[e.event_id] = parent.event_id
+        t, reason = None, ""
+        if e.kind == EventType.BC_FAILED and parent is not None and e.idx >= parent.confirmed_idx:
+            inval[parent.event_id] = StatusChange(EventStatus.INVALIDATED, e.idx, e.date, f"BC failed {vn_ts(e.date)}: close trên đỉnh BC")
+        elif e.kind == EventType.SOW and e.range_id in rng_by_id:
+            rg = rng_by_id[e.range_id]
+            mid = (rg.support + rg.resistance) / 2
+            t = first_above(e.confirmed_idx, lambda j: mid)
+            reason = f"> giữa range {vn_num(mid)}: breakdown thất bại"
+        elif e.kind == EventType.LPSY:
+            k = cfg.distribution.lpsy_invalid_atr
+            t = first_above(e.confirmed_idx, lambda j: e.high + k * atr_ref[j])
+            reason = f"> đỉnh LPSY {vn_num(e.high)} + {vn_g(k)} ATR"
+        if t is not None:
+            inval[e.event_id] = StatusChange(EventStatus.INVALIDATED, t, df.index[t], f"close {vn_num(close[t])} {reason}")
+
+    return [replace(e, history=e.history + ((inval[e.event_id],) if e.event_id in inval else ()),
+                    related_event_ids=tuple(dict.fromkeys(related[e.event_id])), test_of_event_id=test_of.get(e.event_id))
+            for e in evs]
 
 
 def snapshot(events: list[Event], candidates: list[Event], t: int) -> list[tuple[Event, EventStatus]]:

@@ -253,6 +253,50 @@ class LifecycleConfig:
 
 
 @dataclass(frozen=True)
+class DistributionConfig:
+    """Sự kiện phía phân phối (wyckoff/detectors/distribution.py): chỉ ghi nhận, không đổi pha / tin cậy / backtest.
+    Đối xứng với SC, AR, ST, SOS, LPS; khác: `bc_min_rise`, `bc_exclude_ceiling_locked` (hiệu chỉnh theo số đếm, không theo lợi suất)."""
+    # BC
+    bc_min_vol_ratio: float = 2.0
+    bc_min_spread_atr: float = 1.5
+    bc_max_close_pos: float = 0.5     # đóng cửa ở nửa dưới nến
+    bc_trend_lookback: int = 60
+    bc_min_rise: float = 0.30         # tăng >= 30% từ close thấp nhất 60 phiên
+    bc_highest_high_lookback: int = 60
+    bc_cooldown_bars: int = 10        # bỏ BC trùng trong 10 phiên trừ khi tạo đỉnh cao hơn
+    bc_zone_bars: int = 2             # nến đóng cửa cao vẫn là BC nếu trong 2 phiên sau có close < điểm giữa nến
+    bc_exclude_ceiling_locked: bool = True  # phiên khóa trần không phải climax: chưa thấy cung hấp thụ cầu
+    ceiling_chain_min_days: int = 3   # dạng VN: >= 3 phiên tăng trần ...
+    ceiling_chain_window: int = 10    # ... trong 10 phiên trước phiên đảo chiều
+    bc_fail_atr: float = 0.5          # BC failed: close > đỉnh BC + 0.5 ATR ...
+    bc_fail_window: int = 30          # ... trong 30 phiên, trước khi có AR(d)
+    # AR(d)
+    ar_min_atr: float = 3.0           # đáy AR(d) <= đỉnh BC - 3 ATR
+    ar_pivot_bars: int = 3
+    ar_window: int = 30
+    # ST(d)
+    st_window: int = 60
+    st_band_above_atr: float = 0.5    # high trong [đỉnh BC - 1 ATR, đỉnh BC + 0.5 ATR]
+    st_band_below_atr: float = 1.0
+    st_max_vol_vs_bc: float = 0.7
+    st_max_spread_vs_bc: float = 1.0
+    st_min_gap_bars: int = 10
+    # SOW
+    sow_min_breakdown_atr: float = 0.2  # close < support - 0.2 ATR
+    sow_min_spread_atr: float = 1.2
+    sow_min_vol_ratio: float = 1.5
+    sow_max_close_pos: float = 0.3
+    # LPSY
+    lpsy_window: int = 20
+    lpsy_hold_below_sup_atr: float = 1.0  # high <= support + 1 ATR
+    lpsy_min_rally_atr: float = 0.5       # high >= close thấp nhất từ SOW + 0.5 ATR
+    lpsy_max_vol_ratio: float = 1.0
+    lpsy_max_spread_atr: float = 1.0
+    lpsy_confirm_bars: int = 3            # xác nhận: trong 3 phiên sau có close < low phiên LPSY
+    lpsy_invalid_atr: float = 0.5         # LPSY vô hiệu: close > đỉnh LPSY + 0.5 ATR
+
+
+@dataclass(frozen=True)
 class StageConfig:
     """Giai đoạn / loại cấu trúc (wyckoff/stages.py): chỉ ghi nhận, không đổi pha / tin cậy / backtest."""
     slope_bars: int = 20              # SMA tăng / giảm so với 20 phiên trước (như market.slope_bars)
@@ -307,6 +351,7 @@ class Config:
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
     stage: StageConfig = field(default_factory=StageConfig)
     strength: StrengthConfig = field(default_factory=StrengthConfig)
+    distribution: DistributionConfig = field(default_factory=DistributionConfig)
 
 
 def _build(cls: type[T], values: dict[str, Any] | None) -> T:

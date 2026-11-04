@@ -30,7 +30,7 @@ config/default.yaml        mọi ngưỡng (chỉ cần ghi khóa muốn đổi)
 wyckoff/config.py          dataclass cấu hình + load YAML (báo lỗi khóa sai)
 wyckoff/data/              fetcher.py (vnstock, chuẩn hóa, kiểm tra), cache.py, loader.py (get_ohlcv)
 wyckoff/indicators/core.py ATR Wilder, TB volume, spread, close_pos, SMA
-wyckoff/detectors/         swings.py, trading_range.py, events.py (SC/Spring/SOS), structure.py (PS/AR/ST/LPS/UTAD), lifecycle.py (vòng đời event), models.py
+wyckoff/detectors/         swings.py, trading_range.py, events.py (SC/Spring/SOS), structure.py (PS/AR/ST/LPS/UTAD), distribution.py (BC/AR(d)/ST(d)/SOW/LPSY, chỉ ghi nhận), lifecycle.py (vòng đời event), models.py
 wyckoff/phases.py          state machine pha A–E, current_phase()
 wyckoff/stages.py          giai đoạn và loại cấu trúc (chỉ ghi nhận), current_stage()
 wyckoff/market.py          bối cảnh thị trường: xu hướng chỉ số, RS, phân kỳ đáy, đối chiếu sự kiện
@@ -132,6 +132,25 @@ Ba tín hiệu, mỗi tín hiệu −1 / 0 / +1; tổng ≥ 2 mạnh, ≤ −1 y
 | Nhịp điều chỉnh / nhịp hồi (cách cực trị ≥ 2 phiên và ≥ 0,5 ATR) | < 38,2% nhịp trước đó và volume < 1,0x TB20 | ≥ 61,8%, hoặc volume ≥ 1,3x TB20, hoặc close sai phía SMA50 |
 
 **Dashboard** (`StagePhaseCard`, một thẻ): trong range hiện giả thuyết giai đoạn, pha, tiến trình A–E, điểm tin cậy; Markup / Markdown hiện sức mạnh cung cầu và nhịp điều chỉnh, không hiện pha; ngoài range và chưa có xu hướng chỉ nêu trạng thái.
+
+## Sự kiện phía phân phối (`wyckoff/detectors/distribution.py`, chỉ ghi nhận)
+
+Nằm trong `result.distribution`, xuất ra `<MÃ>_distribution.csv`. **Không** vào `result.events`, payload, dashboard, pha, tin cậy hay backtest (khóa `distribution` trong YAML). Chưa có sơ đồ pha phân phối (Bước 3).
+
+| Sự kiện | Điều kiện (đối xứng phía tích lũy, trừ chỗ ghi riêng) |
+|---|---|
+| **BC** | vol_ratio > 2; **tăng ≥ 30%** từ close thấp nhất 60 phiên; close > SMA50; high cao nhất 60 phiên. Dạng climax: True Range > 1,5 ATR, **không khóa trần**; xác nhận khi close_pos ≤ 0,5 hoặc trong 2 phiên sau có close < điểm giữa nến mà không vượt đỉnh. Dạng chuỗi trần: ≥ 3 phiên tăng trần trong 10 phiên trước, phiên hiện tại close_pos ≤ 0,5. BC mới trong 10 phiên chỉ giữ nếu đỉnh cao hơn |
+| **BC failed** | Trong 30 phiên, trước AR(d): close > đỉnh BC + 0,5 ATR |
+| **AR(d)** | Đáy pivot (3 phiên mỗi bên) đầu tiên trong 30 phiên sau BC, low ≤ đỉnh BC − 3 ATR |
+| **ST(d)** | Sau AR(d), trong 60 phiên: high ∈ [đỉnh BC − 1 ATR, đỉnh BC + 0,5 ATR], volume < 0,7× BC, biên độ < BC, close ≤ đỉnh BC; cách nhau ≥ 10 phiên |
+| **SOW** | Trong range: nến giảm; close < support − 0,2 ATR; spread_atr > 1,2; vol_ratio > 1,5; close_pos ≤ 0,3 |
+| **LPSY** | Sau SOW, trong 20 phiên: high ≤ support + 1 ATR, high ≥ close thấp nhất từ SOW + 0,5 ATR, vol_ratio < 1, spread_atr < 1; xác nhận khi trong 3 phiên sau có close < low phiên đó |
+
+Vô hiệu sau xác nhận (trong 60 phiên): BC ← BC failed; SOW ← close > giữa range; LPSY ← close > đỉnh LPSY + 0,5 ATR.
+`tests/test_distribution.py` kiểm tra đối xứng bằng cách lật giá. Khác biệt riêng của BC chọn theo số đếm, không theo lợi suất.
+
+**Khảo sát cấu trúc (311 mã, từ 2018)**: BC 1.656 (SC 1.410), BC failed 42% (SC failed 39%), AR(d) 1.012, ST(d) 1.052, SOW 1.351 (SOS 3.996), LPSY 931. Lệch rõ nhất: chỉ 31% range thoát xuống có SOW, trong khi 71% range thoát lên có SOS,
+một phần do có 1.398 phiên khóa sàn dưới support không đạt điều kiện SOW (thanh khoản cạn, biên độ bị chặn). Chưa nới điều kiện vì phiên khóa trần cũng không tự động là SOS.
 
 ## Chống look-ahead
 - Chỉ báo causal; swing có độ trễ xác nhận; range xử lý online; Spring xác nhận ở phiên quay lại.

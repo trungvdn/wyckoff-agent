@@ -55,6 +55,21 @@ def make_wyckoff_accumulation(start: str = "2023-01-02") -> pd.DataFrame:
     return pd.DataFrame(rows, index=idx, columns=["open", "high", "low", "close", "volume"])
 
 
+MIRROR_LEVEL = 150.0     # giá phân phối = MIRROR_LEVEL - giá tích lũy
+
+
+def mirror_prices(df: pd.DataFrame, level: float = MIRROR_LEVEL) -> pd.DataFrame:
+    """Lật giá quanh `level` (high <-> low), volume giữ nguyên: tích lũy thành phân phối."""
+    return pd.DataFrame({"open": level - df["open"], "high": level - df["low"], "low": level - df["high"],
+                         "close": level - df["close"], "volume": df["volume"]}, index=df.index)
+
+
+def make_wyckoff_distribution(start: str = "2023-01-02") -> pd.DataFrame:
+    """Lật `make_wyckoff_accumulation`: tăng 50 -> 79.7, BC tại SC_IDX (đỉnh 86), range support 76 / resistance 86,
+    upthrust tại SPRING_IDX, SOW tại SOS_IDX, rồi markdown."""
+    return mirror_prices(make_wyckoff_accumulation(start))
+
+
 def make_market_index(dates: pd.DatetimeIndex, start: float = 1000.0) -> pd.DataFrame:
     """Chỉ số tổng hợp cho demo/test: giảm nhẹ nửa đầu, tăng dần nửa sau (biến động nhỏ, không đáy mới cuối kỳ)."""
     n = len(dates)
