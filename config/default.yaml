@@ -75,6 +75,8 @@ sos:
   min_spread_atr: 1.2
   min_vol_ratio: 1.5
   min_close_pos: 0.7
+  confirm_mode: same_bar     # H5: same_bar (v2) | follow_through | locked_follow_through (chỉ phiên khóa trần)
+  follow_through_bars: 3     #   chờ 3 phiên: close < resistance -> thất bại; close > high phiên breakout hoặc giữ 3 phiên -> xác nhận
 
 ps:
   lookback: 40               # tìm trong 40 phiên trước SC, lấy phiên gần SC nhất

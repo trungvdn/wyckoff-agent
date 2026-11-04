@@ -89,12 +89,14 @@ def _first_close_below(
 
 
 def _confirmed_history(df: pd.DataFrame, e: Event) -> list[StatusChange]:
-    """Các mốc trước xác nhận chỉ ghi cho loại có ghi cả candidate thất bại (SC, Spring) –
+    """Các mốc trước xác nhận chỉ ghi cho loại có ghi cả candidate thất bại (SC, Spring, SOS follow-through) –
     nếu không, việc 'biết' DETECTED ở phiên event sẽ là nhìn trước kết quả."""
     ch = lambda s, i, r="": StatusChange(s, i, df.index[i], r)  # noqa: E731
     h: list[StatusChange] = []
     if e.kind == EventType.SC and e.confirmed_idx > e.idx:
         h.append(ch(EventStatus.DETECTED, e.idx, "climax đóng cửa thấp, chờ xác nhận vùng"))
+    elif e.kind == EventType.SOS and "follow_through" in e.details:
+        h.append(ch(EventStatus.DETECTED, e.idx, "breakout, chờ follow-through"))
     elif e.kind == EventType.SPRING:
         rec = _loc(df, e.details["recovery_date"])
         if rec > e.idx:

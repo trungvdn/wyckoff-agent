@@ -198,7 +198,8 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
         "rules": {
             "price_limit_pct": _r(cfg.data.price_limit * 100, 1),
             "sos": {"min_breakout_atr": cfg.sos.min_breakout_atr, "min_vol_ratio": cfg.sos.min_vol_ratio,
-                    "min_spread_atr": cfg.sos.min_spread_atr, "min_close_pos": cfg.sos.min_close_pos},
+                    "min_spread_atr": cfg.sos.min_spread_atr, "min_close_pos": cfg.sos.min_close_pos,
+                    "confirm_mode": cfg.sos.confirm_mode, "follow_through_bars": cfg.sos.follow_through_bars},
             "spring": {"max_vol_ratio_low_volume": cfg.spring.max_vol_ratio, "max_recovery_bars": cfg.spring.max_recovery_bars,
                        "test_vol_factor": cfg.spring.test_vol_factor, "invalid_atr": cfg.phase.spring_invalid_atr},
             "range_exit": {"exit_atr": cfg.ranges.exit_atr, "exit_bars": cfg.ranges.exit_bars},

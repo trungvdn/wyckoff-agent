@@ -13,6 +13,7 @@ from wyckoff.detectors.structure import detect_ar, detect_lps, detect_ps, detect
 from wyckoff.detectors.swings import find_swings
 from wyckoff.detectors.trading_range import detect_trading_ranges
 from wyckoff.indicators.core import add_indicators
+from wyckoff.indicators.limits import add_limit_flags
 from wyckoff.phases import CurrentPhase, PhaseResult, classify_phases, current_phase
 
 
@@ -72,7 +73,8 @@ class AnalysisResult:
 
 def analyze(ohlcv: pd.DataFrame, cfg: Config | None = None) -> AnalysisResult:
     cfg = cfg or Config()
-    df = add_indicators(ohlcv, cfg.indicators)
+    df = add_limit_flags(add_indicators(ohlcv, cfg.indicators), cfg.data.price_limit, cfg.data.limit_tolerance,
+                         cfg.data.exchange)
     swings = find_swings(df, cfg.swings)
     dec = cfg.indicators.ratio_decimals
     candidates: list[Event] = []
@@ -84,8 +86,8 @@ def analyze(ohlcv: pd.DataFrame, cfg: Config | None = None) -> AnalysisResult:
     anchors = sc_ar_anchors(sc_events, ar) if cfg.ranges.anchor_sc_ar else None
     ranges = detect_trading_ranges(df, swings, cfg.ranges, anchors)
     springs = detect_spring(df, ranges, cfg.spring, exchange=cfg.data.exchange, decimals=dec, candidates=candidates)
-    sos = detect_sos(df, ranges, cfg.sos, decimals=dec) + detect_sos_reclaim(
-        df, ranges, cfg.sos, window=cfg.phase.reclaim_window, decimals=dec
+    sos = detect_sos(df, ranges, cfg.sos, decimals=dec, candidates=candidates) + detect_sos_reclaim(
+        df, ranges, cfg.sos, window=cfg.phase.reclaim_window, decimals=dec, candidates=candidates
     )
     events = (
         sc_events + springs + sos + ar

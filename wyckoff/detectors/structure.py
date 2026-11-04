@@ -188,7 +188,8 @@ def detect_lps(
                             "low_vs_resistance_atr": round(float((low[k] - res) / a), 3),
                             "pullback_atr": round(float((max_close - low[k]) / a), 3),
                         }
-                        out[k] = _make_event(df, EventType.LPS, k, conf, sos.range_id, details)
+                        # LPS không thể biết trước khi SOS của nó xác nhận (SOS follow-through, H5)
+                        out[k] = _make_event(df, EventType.LPS, k, max(conf, sos.confirmed_idx), sos.range_id, details)
                     break
             max_close = max(max_close, close[k])
     return sorted(out.values(), key=lambda e: e.idx)

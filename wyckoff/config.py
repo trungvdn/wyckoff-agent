@@ -105,6 +105,14 @@ class SOSConfig:
     min_spread_atr: float = 1.2
     min_vol_ratio: float = 1.5
     min_close_pos: float = 0.7
+    # H5 (quy chuẩn 04/11/2026 mục 4.7): same_bar = xác nhận ngay phiên breakout (v2);
+    # follow_through = chờ <= follow_through_bars phiên: close < resistance -> thất bại, close > high phiên breakout -> xác nhận,
+    # giữ >= resistance đủ số phiên -> xác nhận; locked_follow_through = chỉ phiên khóa trần cần follow-through.
+    confirm_mode: str = "same_bar"
+    follow_through_bars: int = 3
+
+
+SOS_CONFIRM_MODES = ("same_bar", "follow_through", "locked_follow_through")
 
 
 @dataclass(frozen=True)

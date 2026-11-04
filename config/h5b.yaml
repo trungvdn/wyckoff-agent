@@ -1,0 +1,3 @@
+# H5b (docs/h5-preregistration.md): chỉ phiên breakout khóa trần cần follow-through. Các khóa khác = mặc định.
+sos:
+  confirm_mode: locked_follow_through

@@ -68,7 +68,7 @@ Các tỉ số được **làm tròn 2 chữ số** trước khi so ngưỡng (0
 | **Spring** | Trong range có bối cảnh thuộc `spring.allowed_contexts` (mặc định: tất cả). Range đã xác nhận ≥ 5 phiên trước. Phiên thủng đầu tiên: low < support − max(0.1 ATR, 1 tick). Phiên hồi trong ≤ 3 phiên (tính cả phiên thủng): close ≥ support + 1 tick **và** close_pos ≥ 0.5. Mọi phiên có low < support có vol_ratio < 1.0 → **Spring volume thấp**, xác nhận tại phiên hồi |
 | **Spring (shakeout) + Test** | Như trên nhưng có phiên thủng vol_ratio ≥ 1.0 → chỉ xác nhận khi có **Test** trong 15 phiên sau phiên hồi: low ≥ đáy shakeout, low ≤ support + 0.1 ATR, volume < 0.6 × volume phiên thủng lớn nhất, support ≤ close ≤ resistance |
 | **Gộp Spring** | Spring mới có phiên thủng cách Spring trước < 10 phiên chỉ được giữ nếu đáy thấp hơn (xét theo thứ tự xác nhận, không nhìn trước) |
-| **SOS** | trong range (hoặc các phiên đang phá range trước khi xác nhận thoát); close > open; close > resistance + 0.2 ATR; spread_atr > 1.2; vol_ratio > 1.5; close_pos ≥ 0.7 |
+| **SOS** | trong range (hoặc các phiên đang phá range trước khi xác nhận thoát); close > open; close > resistance + 0.2 ATR; spread_atr > 1.2; vol_ratio > 1.5; close_pos ≥ 0.7. Xác nhận theo `sos.confirm_mode`: `same_bar` (mặc định, xác nhận ngay); `follow_through` (H5a): trong 3 phiên sau close < resistance → thất bại (candidate INVALIDATED), close > high phiên breakout → xác nhận, giữ ≥ resistance đủ 3 phiên → xác nhận; `locked_follow_through` (H5b): chỉ phiên khóa trần cần follow-through. LPS không xác nhận trước SOS của nó |
 | **SOS reclaim** | Range đã thoát xuống; trong 30 phiên sau (`phase.reclaim_window`, chưa có range mới xác nhận) phiên đầu tiên thỏa đúng quy tắc SOS so với resistance cũ. Đưa cấu trúc từ invalid về D; sau đó 3 close > resistance + 0.5 ATR → E, 3 close < support − 0.5 ATR → invalid. Tin cậy 0 điểm: trên 308 mã, bexcess 20 phiên +1,62% (CI 90% −0,50 đến +3,78; nền +0,34%), 60 phiên +3,90% (nền +1,72%), giai đoạn 2023–nay −1,06% |
 | **PS** | Trong 40 phiên trước SC (lấy phiên gần nhất), close < SMA50: vol_ratio ≥ 1.5, close_pos ≥ 0.5, spread_atr ≥ 1.0, low > đáy SC. Xác nhận tại phiên xác nhận SC |
 | **AR** | Đỉnh pivot (3 phiên mỗi bên) đầu tiên trong 30 phiên sau SC với high ≥ đáy SC + 3 ATR. Xác nhận ở pivot + 3. SC đã failed thì không có AR |
@@ -132,6 +132,9 @@ Chỉ **ghi nhận**, không đổi pha / tin cậy / backtest: `result.events` 
   Không cách nào phủ đủ → dùng kết quả phủ xa nhất và cảnh báo **THIẾU LỊCH SỬ**.
 - Chẩn đoán: `python scripts/check_vnstock.py HPG` in cấp tài khoản và độ phủ của từng cách gọi.
 - **Khởi động**: `run.py` tải thêm ~120 phiên trước `--start`, phân tích trên toàn bộ rồi chỉ báo cáo/vẽ từ `--start` (`AnalysisResult.since`).
+- **Cờ trần / sàn** (`wyckoff/indicators/limits.py`, cột của `result.df`, `details["limit"]` của event): `limit_up` / `limit_down` khi
+  |ΔClose| ≥ `price_limit` − `limit_tolerance` (HOSE 6,5%); `ceiling_locked` = `limit_up` và high − close ≤ 1 tick; `floor_locked` = `limit_down`
+  và close − low ≤ 1 tick. Giá đã điều chỉnh, một `price_limit` cho mọi mã; không phân biệt khóa lúc ATC.
 - **Kiểm tra điều chỉnh giá**: trên HOSE |ΔClose| ≤ 7%. Phiên vượt 7.5% bị cảnh báo là có thể chưa điều chỉnh
   (ngày GDKHQ). HNX: đặt `data.price_limit: 0.10`.
 - Cache cập nhật tăng dần với 10 ngày chồng lấn; nếu close vùng chồng lấn lệch > 0.1% (có sự kiện quyền mới) thì tải lại toàn bộ.
@@ -254,3 +257,4 @@ nến ngày (chỉ tham khảo); 15 phút / Giờ chưa hỗ trợ.
   `WYCKOFF_MODEL`, `WYCKOFF_NO_LLM`, `WYCKOFF_NO_MARKET`, `WYCKOFF_DEFAULT_SYMBOL`.
 - Chưa có xác thực / giới hạn tần suất: mặc định chỉ nghe `127.0.0.1`; cần bổ sung trước khi mở ra Internet.
 - **Giả thuyết H4** (`docs/h4-preregistration.md`, 308 mã): H4a SC hai phiên (`config/h4a.yaml`) và H4b range neo theo SC–AR (`config/h4b.yaml`) – **không chấp nhận**, mặc định tắt. H4b trung tính với thang tin cậy (chênh lệch cao − thấp +1,56 so với +1,55; P = 0,53). Chạy lại: `scripts/parallel_study.py`, `scripts/h4_eval.py`.
+- **Giả thuyết H5** (`docs/h5-preregistration.md`, 311 mã): H5a SOS cần follow-through (`config/h5a.yaml`) và H5b chỉ phiên khóa trần cần follow-through (`config/h5b.yaml`) – **không chấp nhận**, mặc định `same_bar`. H5a: cao − thấp +1,53 so với +1,46 nhưng 2023–nay mức cao 60 phiên −2,03 so với −1,51, P = 0,61. Tham khảo: H5a loại 19% SOS, SOS còn lại 20 phiên +0,59 so với +0,17. Chạy lại: `scripts/parallel_study.py`, `scripts/h5_eval.py`.

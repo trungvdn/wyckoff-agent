@@ -212,6 +212,11 @@ def classify_phases(
                 cur.sos = e
                 if cur.phase != "D":
                     set_phase(cur, "D", f"SOS {_v(e)}")
+            elif e.kind == EventType.SOS and e.details.get("follow_through") and same_range and cur.phase == "E" \
+                    and cur.sos is None:
+                # H5: range đã thoát lên trước khi SOS hoàn tất follow-through -> ghi bằng chứng, giữ pha E
+                cur.events.append(e)
+                cur.sos = e
             elif e.kind == EventType.LPS and same_range and cur.phase in ("D", "E"):
                 cur.events.append(e)
                 cur.lps = e

@@ -16,8 +16,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from wyckoff.config import SellingClimaxConfig, SOSConfig, SpringConfig
+from wyckoff.config import SOS_CONFIRM_MODES, SellingClimaxConfig, SOSConfig, SpringConfig
 from wyckoff.detectors.models import Event, EventStatus, EventType, StatusChange, TradingRange
+from wyckoff.indicators.limits import limit_label
 from wyckoff.indicators.ticks import tick_size
 
 
@@ -29,6 +30,10 @@ def _make_event(
     df: pd.DataFrame, kind: EventType, i: int, confirmed_i: int, range_id: int | None, details: dict[str, Any]
 ) -> Event:
     row = df.iloc[i]
+    if "limit_up" in df.columns:
+        lab = limit_label(row)
+        if lab is not None:
+            details["limit"] = lab      # sửa tại chỗ: các detector còn cập nhật `details` sau khi tạo event
     return Event(
         kind=kind, idx=i, date=df.index[i], confirmed_idx=confirmed_i, confirmed_date=df.index[confirmed_i],
         open=float(row["open"]), high=float(row["high"]), low=float(row["low"]), close=float(row["close"]),
@@ -351,12 +356,70 @@ def detect_spring(
 
 # -------------------------------------------------------------------------- SOS
 
+def _sos_bar(row: pd.Series, rr: pd.Series, resistance: float, cfg: SOSConfig) -> bool:
+    return bool(
+        row["close"] > row["open"]
+        and row["close"] > resistance + cfg.min_breakout_atr * row["atr_ref"]
+        and rr["spread_atr"] > cfg.min_spread_atr
+        and rr["vol_ratio"] > cfg.min_vol_ratio
+        and rr["close_pos"] >= cfg.min_close_pos
+    )
+
+
+def _needs_follow_through(df: pd.DataFrame, i: int, cfg: SOSConfig) -> bool:
+    if cfg.confirm_mode not in SOS_CONFIRM_MODES:
+        raise ValueError(f"sos.confirm_mode không hợp lệ: {cfg.confirm_mode}")
+    if cfg.confirm_mode == "follow_through":
+        return True
+    return cfg.confirm_mode == "locked_follow_through" and bool(df["ceiling_locked"].iloc[i]) \
+        if "ceiling_locked" in df.columns else False
+
+
+def _follow_through(
+    df: pd.DataFrame, i: int, resistance: float, cfg: SOSConfig
+) -> tuple[int | None, StatusChange | None, str]:
+    """(phiên xác nhận, mốc thất bại, cách xác nhận). Cả hai None = chưa đủ dữ liệu (còn candidate).
+    Trong (i, i + N]: close < resistance -> thất bại; close > high[i] -> xác nhận; giữ đủ N phiên -> xác nhận tại i + N."""
+    close = df["close"].to_numpy(dtype=float)
+    hi = float(df["high"].iloc[i])
+    last = len(df) - 1
+    n = cfg.follow_through_bars
+    for j in range(i + 1, min(i + n, last) + 1):
+        if close[j] < resistance:
+            return None, _change(df, EventStatus.INVALIDATED, j,
+                                 f"close {close[j]:.2f} quay lại dưới resistance {resistance:.2f} trong {n} phiên"), ""
+        if close[j] > hi:
+            return j, None, "close vượt high phiên breakout"
+    if i + n <= last:
+        return i + n, None, f"giữ trên resistance {n} phiên"
+    return None, None, ""
+
+
+def _sos_event(
+    df: pd.DataFrame, i: int, rng: TradingRange, cfg: SOSConfig, details: dict[str, Any],
+    candidates: list[Event] | None,
+) -> tuple[Event | None, Event | None]:
+    """(SOS đã xác nhận, candidate). Phiên không cần follow-through -> xác nhận ngay như v2."""
+    if not _needs_follow_through(df, i, cfg):
+        return _make_event(df, EventType.SOS, i, i, rng.range_id, details), None
+    conf, ended, how = _follow_through(df, i, rng.resistance, cfg)
+    if conf is not None:
+        details.update({"follow_through": how, "follow_through_bars": conf - i})
+        return _make_event(df, EventType.SOS, i, conf, rng.range_id, details), None
+    hist = [_change(df, EventStatus.DETECTED, i, "breakout, chờ follow-through")] + ([ended] if ended else [])
+    return None, _candidate(df, EventType.SOS, i, rng.range_id, details, hist)
+
+
 def detect_sos(
-    df: pd.DataFrame, ranges: list[TradingRange], cfg: SOSConfig | None = None, decimals: int = 2
+    df: pd.DataFrame, ranges: list[TradingRange], cfg: SOSConfig | None = None, decimals: int = 2,
+    candidates: list[Event] | None = None,
 ) -> list[Event]:
     """SOS: trong range đã xác nhận (hoặc trong chuỗi phiên đang phá range), nến tăng
     close > open, close > resistance + min_breakout_atr x ATR, spread > min_spread_atr x ATR,
-    volume > min_vol_ratio x TB20, close_pos >= min_close_pos."""
+    volume > min_vol_ratio x TB20, close_pos >= min_close_pos.
+
+    `confirm_mode` (H5): same_bar -> xác nhận tại phiên breakout; follow_through / locked_follow_through ->
+    xác nhận theo `_follow_through`, phiên breakout thất bại hoặc chưa đủ dữ liệu vào `candidates`."""
     cfg = cfg or SOSConfig()
     r = _rounded(df, decimals)
     last = len(df) - 1
@@ -380,16 +443,22 @@ def detect_sos(
                 "resistance": round(rng.resistance, 4),
                 "breakout_atr": round(float((df["close"].iloc[i] - rng.resistance) / df["atr_ref"].iloc[i]), 3),
             }
-            events.append(_make_event(df, EventType.SOS, i, i, rng.range_id, details))
+            ev, cand = _sos_event(df, i, rng, cfg, details, candidates)
+            if ev is not None:
+                events.append(ev)
+            elif candidates is not None:
+                candidates.append(cand)
     return sorted(events, key=lambda e: e.idx)
 
 
 def detect_sos_reclaim(
-    df: pd.DataFrame, ranges: list[TradingRange], cfg: SOSConfig | None = None, window: int = 30, decimals: int = 2
+    df: pd.DataFrame, ranges: list[TradingRange], cfg: SOSConfig | None = None, window: int = 30, decimals: int = 2,
+    candidates: list[Event] | None = None,
 ) -> list[Event]:
-    """SOS reclaim: range đã thoát xuống nhưng trong `window` phiên sau (chưa có range mới xác nhận) có phiên đầu
-    tiên thỏa đúng quy tắc SOS so với resistance cũ -> nhịp thoát xuống là cú rũ kéo dài, không phải phá vỡ.
-    Mỗi range tối đa một sự kiện. `window` <= 0: tắt."""
+    """SOS reclaim: range đã thoát xuống nhưng trong `window` phiên sau (chưa có range mới xác nhận) có phiên
+    thỏa đúng quy tắc SOS so với resistance cũ -> nhịp thoát xuống là cú rũ kéo dài, không phải phá vỡ.
+    Mỗi range tối đa một sự kiện: phiên đầu tiên (same_bar), hoặc candidate được xác nhận sớm nhất (follow-through;
+    candidate khác chưa kết thúc tại đó -> REVISED). `window` <= 0: tắt."""
     if window <= 0:
         return []
     cfg = cfg or SOSConfig()
@@ -402,22 +471,41 @@ def detect_sos_reclaim(
             continue
         x = rng.end_confirmed_idx
         next_range = min((c for c in confirmed if c > x), default=last + 1)
+        found: list[tuple[Event | None, Event | None]] = []
         for i in range(x + 1, min(x + window, last, next_range - 1) + 1):
+            if found and found[0][0] is not None and i > found[0][0].confirmed_idx:
+                break     # đã có SOS reclaim xác nhận trước phiên này
             row, rr = df.iloc[i], r.iloc[i]
-            if (
-                row["close"] > row["open"]
-                and row["close"] > rng.resistance + cfg.min_breakout_atr * row["atr_ref"]
-                and rr["spread_atr"] > cfg.min_spread_atr
-                and rr["vol_ratio"] > cfg.min_vol_ratio
-                and rr["close_pos"] >= cfg.min_close_pos
-            ):
-                details = {
-                    "reclaim": True,
-                    "resistance": round(rng.resistance, 4),
-                    "breakout_atr": round(float((row["close"] - rng.resistance) / row["atr_ref"]), 3),
-                    "exit_date": df.index[x].strftime("%Y-%m-%d"),
-                    "bars_after_exit": i - x,
-                }
-                events.append(_make_event(df, EventType.SOS, i, i, rng.range_id, details))
-                break
+            if not _sos_bar(row, rr, rng.resistance, cfg):
+                continue
+            details = {
+                "reclaim": True,
+                "resistance": round(rng.resistance, 4),
+                "breakout_atr": round(float((row["close"] - rng.resistance) / row["atr_ref"]), 3),
+                "exit_date": df.index[x].strftime("%Y-%m-%d"),
+                "bars_after_exit": i - x,
+            }
+            pair = _sos_event(df, i, rng, cfg, details, candidates)
+            found.append(pair)
+            found.sort(key=lambda p: (p[0].confirmed_idx, p[0].idx) if p[0] is not None else (10**9, 0))
+            if pair[0] is not None and pair[0].confirmed_idx == i:
+                break     # xác nhận ngay (same_bar): như v2
+        chosen = found[0][0] if found and found[0][0] is not None else None
+        if chosen is not None:
+            events.append(chosen)
+        if candidates is None:
+            continue
+        for ev, cand in found:
+            if ev is chosen and ev is not None:
+                continue
+            item = cand if cand is not None else replace(ev, confirmed_idx=-1, confirmed_date=pd.NaT, history=(
+                _change(df, EventStatus.DETECTED, ev.idx, "breakout, chờ follow-through"),))
+            if chosen is not None:
+                hist = [h for h in item.history if h.idx < chosen.confirmed_idx]
+                ended = any(h.status == EventStatus.INVALIDATED for h in hist)
+                if not ended:
+                    hist.append(_change(df, EventStatus.REVISED, chosen.confirmed_idx,
+                                        f"đã có SOS reclaim {chosen.date:%d/%m/%Y} xác nhận"))
+                item = replace(item, history=tuple(hist))
+            candidates.append(item)
     return sorted(events, key=lambda e: e.idx)
