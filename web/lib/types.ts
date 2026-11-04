@@ -39,6 +39,13 @@ export interface PhaseSegment {
   i1: number;
 }
 
+export interface StageSegment {
+  kind: "up" | "down" | "range" | "none";
+  label: string;
+  i0: number;
+  i1: number;
+}
+
 export type StepStatus = "done" | "current" | "pending";
 
 export interface PhaseInfo {
@@ -76,6 +83,7 @@ export interface StageInfo {
   stage: string | null; // Markup | Markdown; null khi trong range hoặc chưa có xu hướng
   structure_type: string;
   strength: TrendStrength | null;
+  note: string | null; // lưu ý từ kết quả kiểm định khi có pha C trong range
   distribution_phase: {
     phase: string | null;
     title: string;
@@ -127,13 +135,16 @@ export interface Level {
 }
 
 export interface Target {
+  direction: "up" | "down";
+  reached: boolean; // giá hiện tại đã đi qua mức thận trọng
   columns: number;
   box: number;
   reversal: number;
   count_from: string;
   count_to: string;
   count_to_event: string | null;
-  base_low: number;
+  base_low?: number;
+  base_high?: number;
   count_line: number;
   conservative: number;
   aggressive: number;
@@ -152,12 +163,14 @@ export interface Analysis {
   chart_events: ChartEvent[];
   ranges: RangeBox[];
   phase_segments: PhaseSegment[];
+  stage_segments: StageSegment[];
   stage: StageInfo;
   phase: PhaseInfo;
   confidence: Confidence;
   events: WyckoffEvent[];
   levels: Level[];
   target: Target | null;
+  target_down: Target | null;
   market: { benchmark: string; trend: string; rs_change_60d_pct: number | null } | null;
 }
 

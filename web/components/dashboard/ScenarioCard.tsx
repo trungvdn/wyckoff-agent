@@ -31,13 +31,15 @@ function LevelList({ levels, narratives, empty }: { levels: Level[]; narratives:
 }
 
 function TargetBlock({ t }: { t: Target | null }) {
+  const down = t?.direction === "down";
   return (
     <Block
       tone="target"
       title={
         <>
-          Mục tiêu (Nhân–Quả · Point &amp; Figure)
+          Mục tiêu {down ? "chiều xuống " : ""}(Nhân–Quả · Point &amp; Figure)
           {t?.provisional && <span className="ml-2 rounded border border-line-strong px-1.5 text-2xs font-medium text-muted">tạm tính</span>}
+          {t?.reached && <span className="ml-2 rounded border border-line-strong px-1.5 text-2xs font-medium text-muted">đã đạt mức thận trọng</span>}
         </>
       }
     >
@@ -51,7 +53,7 @@ function TargetBlock({ t }: { t: Target | null }) {
             {t.count_to_event && ` (${t.count_to_event})`} · ô {fmtPrice(t.box)} · đảo chiều {t.reversal} ô
           </span>
           <span className="text-[13px] text-fg-2">
-            Thận trọng: từ đáy cấu trúc {fmtPrice(t.base_low)}. Tích cực: từ đường đếm {fmtPrice(t.count_line)}. Ước lượng, không phải dự báo.
+            Thận trọng: từ {down ? `đỉnh cấu trúc ${fmtPrice(t.base_high)}` : `đáy cấu trúc ${fmtPrice(t.base_low)}`}. Tích cực: từ đường đếm {fmtPrice(t.count_line)}. Ước lượng, không phải dự báo.
           </span>
         </>
       ) : (
@@ -62,7 +64,7 @@ function TargetBlock({ t }: { t: Target | null }) {
 }
 
 /** Điều kiện xác nhận / vô hiệu (mức giá do code tính, diễn giải do agent) và mục tiêu P&F. */
-export function ScenarioCard({ levels, target }: { levels: Level[]; target: Target | null }) {
+export function ScenarioCard({ levels, target, targetDown }: { levels: Level[]; target: Target | null; targetDown: Target | null }) {
   const { state: ex } = useExplanation();
   const narratives = new Map<string, string>();
   if (ex.status === "ok") {
@@ -78,7 +80,8 @@ export function ScenarioCard({ levels, target }: { levels: Level[]; target: Targ
         <Block tone="invalid" title="Vô hiệu">
           <LevelList levels={levels.filter((l) => l.type === "invalidate")} narratives={narratives} empty="Không có mức vô hiệu cho pha hiện tại." />
         </Block>
-        <TargetBlock t={target} />
+        {(target || !targetDown) && <TargetBlock t={target} />}
+        {targetDown && <TargetBlock t={targetDown} />}
       </div>
     </Card>
   );

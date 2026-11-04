@@ -19,7 +19,8 @@ from wyckoff.indicators.limits import add_limit_flags
 from wyckoff.phases_distribution import classify_distribution_phases, current_distribution_phase
 from wyckoff.pipeline import analyze
 from wyckoff.synthetic import SC_IDX, SOS_IDX, SPRING_IDX, make_wyckoff_accumulation, make_wyckoff_distribution
-from wyckoff.web.viewmodel import stage_view
+from wyckoff.pnf import cause_effect_target_down
+from wyckoff.web.viewmodel import H8_NOTE, build_view, current_distribution_structure, stage_segments, stage_view
 
 
 def flat(n: int = 120, c: float = 100.0) -> pd.DataFrame:
@@ -200,3 +201,91 @@ def test_current_without_structure() -> None:
     res = classify_distribution_phases(df, [], [], [])
     cur = current_distribution_phase(res)
     assert cur.phase is None and cur.reason == "chưa có cấu trúc" and np.isnan(res.series["range_id"].iloc[-1])
+
+
+# ------------------------------------------------------------------ mục tiêu chiều xuống, view
+
+def test_target_down_mirrors_up_on_demo() -> None:
+    from wyckoff.pnf import cause_effect_target
+    from wyckoff.web.viewmodel import current_structure
+
+    up_res = analyze(make_wyckoff_accumulation())
+    up = cause_effect_target(up_res.df, current_structure(up_res))
+    dn_res = analyze(make_wyckoff_distribution())
+    t = cause_effect_target_down(dn_res.df, current_distribution_structure(dn_res))
+    assert t["direction"] == "down" and t["columns"] > 0 and abs(t["columns"] - up["columns"]) <= 1
+    assert t["count_to_event"] == "SOW" and not t["provisional"]
+    width = t["columns"] * t["box"] * t["reversal"]
+    assert t["base_high"] == pytest.approx(150.0 - up["base_low"])      # đỉnh upthrust đối xứng đáy Spring
+    assert t["conservative"] == pytest.approx(t["base_high"] - width, abs=0.01) and t["aggressive"] <= t["conservative"]
+
+
+def test_target_down_only_from_phase_c() -> None:
+    raw = make_wyckoff_distribution()
+    early = analyze(raw.iloc[:150])
+    assert early.current_distribution_phase().phase in ("A", "B")
+    assert cause_effect_target_down(early.df, current_distribution_structure(early)) is None
+    mid = analyze(raw.iloc[:185])
+    t = cause_effect_target_down(mid.df, current_distribution_structure(mid))
+    assert mid.current_distribution_phase().phase == "C" and t["provisional"] and t["count_to_event"] is None
+
+
+def test_target_down_none_when_not_positive() -> None:
+    res = analyze(make_wyckoff_distribution())
+    s = dataclasses.replace(current_distribution_structure(res), rng=dataclasses.replace(res.ranges[0], atr_at_confirm=500.0))
+    assert cause_effect_target_down(res.df, s) is None
+
+
+def test_view_targets_follow_stage() -> None:
+    raw = make_wyckoff_distribution()
+    res = analyze(raw)
+    v = build_view(res, build_payload(res, "X"), "X", "1D")
+    assert v["stage"]["stage"] == "Markdown" and v["target"] is None and v["target_down"]["direction"] == "down"
+    assert {"BC", "AR(d)", "SOW"} <= {e["kind"] for e in v["chart_events"]}
+    assert all(v["bars"][e["i"]]["t"] == e["t"] for e in v["chart_events"]) and v["stage"]["note"] is None
+    assert [s["kind"] for s in v["stage_segments"]][-2:] == ["range", "down"]
+
+
+def test_view_in_range_shows_note_and_down_target() -> None:
+    res = analyze(make_wyckoff_distribution().iloc[:185])
+    v = build_view(res, build_payload(res, "X"), "X", "1D")
+    assert v["stage"]["view"] == "range" and v["stage"]["distribution_phase"]["phase"] == "C" and v["stage"]["note"] == H8_NOTE
+    assert v["target_down"] is not None
+    assert stage_segments(res)[-1]["label"] == "TR ?"
+
+
+def test_view_no_note_without_phase_c() -> None:
+    res = analyze(make_wyckoff_distribution().iloc[:150])
+    assert build_view(res, build_payload(res, "X"), "X", "1D")["stage"]["note"] is None
+
+
+def test_chart_events_keep_price_side() -> None:
+    res = analyze(make_wyckoff_distribution())
+    v = build_view(res, build_payload(res, "X"), "X", "1D")
+    bc = next(e for e in v["chart_events"] if e["kind"] == "BC")
+    sow = next(e for e in v["chart_events"] if e["kind"] == "SOW")
+    assert bc["above"] and bc["price"] == pytest.approx(86.0) and not sow["above"]
+
+
+def test_reached_flag_on_both_directions() -> None:
+    res = analyze(make_wyckoff_distribution())
+    t = build_view(res, build_payload(res, "X"), "X", "1D")["target_down"]
+    assert t["reached"] == (float(res.df["close"].iloc[-1]) <= t["conservative"])
+    up = analyze(make_wyckoff_accumulation())
+    u = build_view(up, build_payload(up, "X"), "X", "1D")["target"]
+    assert u["reached"] == (float(up.df["close"].iloc[-1]) >= u["conservative"])
+
+
+def test_target_count_stops_at_range_end_when_no_breakout_event() -> None:
+    from wyckoff.pnf import cause_effect_target
+    from wyckoff.web.viewmodel import current_structure
+
+    res = analyze(make_wyckoff_distribution())
+    d = current_distribution_structure(res)
+    no_sow = dataclasses.replace(d, sow=None)
+    t = cause_effect_target_down(res.df, no_sow)
+    assert t["count_to"] == f"{res.df.index[res.ranges[0].end_idx]:%Y-%m-%d}" and not t["provisional"]
+    up = analyze(make_wyckoff_accumulation())
+    s = dataclasses.replace(current_structure(up), sos=None, lps=None)
+    u = cause_effect_target(up.df, s)
+    assert u["count_to"] == f"{up.df.index[up.ranges[0].end_idx]:%Y-%m-%d}" and not u["provisional"]

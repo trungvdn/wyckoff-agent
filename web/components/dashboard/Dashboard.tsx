@@ -23,7 +23,7 @@ export function Dashboard({ data }: { data: Analysis }) {
         </div>
       </main>
       <div className="grid grid-cols-1 gap-4 sm:gap-5 wide:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-        <ScenarioCard levels={data.levels} target={data.target} />
+        <ScenarioCard levels={data.levels} target={data.target} targetDown={data.target_down} />
         <AskAgent symbol={data.symbol} tf={data.timeframe} />
       </div>
     </ExplanationProvider>

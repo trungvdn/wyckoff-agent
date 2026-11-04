@@ -163,7 +163,10 @@ Vô hiệu sau xác nhận (trong 60 phiên): BC ← BC failed; SOW ← close > 
 | E | Range thoát xuống | — |
 | invalid | Range thoát lên; pha C có close > đỉnh upthrust + 0,5 ATR | cấu trúc mới khi có BC hoặc range mới |
 
-Khác phía tích lũy: Spring không vô hiệu cấu trúc phân phối, không có "SOS reclaim" đối xứng. Payload v8 thêm `current_stage.distribution_phase` khi đang trong range; prompt v7. Dashboard hiện cả hai sơ đồ trong thẻ `StagePhaseCard` khi đang trong range.
+Khác phía tích lũy: Spring không vô hiệu cấu trúc phân phối, không có "SOS reclaim" đối xứng. Payload v8 thêm `current_stage.distribution_phase` khi đang trong range; prompt v8. Dashboard hiện cả hai sơ đồ trong thẻ `StagePhaseCard` khi đang trong range; có pha C thì kèm ghi chú kết quả H8.
+
+**Trên dashboard**: dải giai đoạn ở đáy biểu đồ (Markup, Markdown, range; range đã thoát ghi nhãn đã chốt, chưa thoát ghi `TR ?`); sự kiện phía phân phối của cấu trúc hiện tại (không hiện khi đang Markup).
+**Mục tiêu P&F chiều xuống** (`pnf.cause_effect_target_down`, chỉ trên dashboard, pha C, D, E theo sơ đồ phân phối): thận trọng = đỉnh cấu trúc − cột × ô × 3; tích cực = đường đếm (đỉnh LPSY, chưa có thì resistance) − cột × ô × 3. Đang Markup chỉ hiện mục tiêu lên, đang Markdown chỉ hiện mục tiêu xuống, trong range hiện cả hai nếu đủ điều kiện. Ước lượng, chưa kiểm định bằng backtest.
 
 ## Chống look-ahead
 - Chỉ báo causal; swing có độ trễ xác nhận; range xử lý online; Spring xác nhận ở phiên quay lại.
@@ -319,7 +322,7 @@ nến ngày (chỉ tham khảo); 15 phút / Giờ chưa hỗ trợ.
 - **Hỏi agent** (`wyckoff/agent/ask.py`): cùng nguyên tắc diễn giải – chỉ dùng số trong payload (số người dùng tự gõ trong
   câu hỏi được phép nhắc lại), không tên trường kỹ thuật, `event_ids` phải tồn tại; sai -> thử lại 1 lần -> trả lời theo mẫu.
 - **Mục tiêu P&F** (`wyckoff/pnf.py`, khóa `pnf` trong YAML): P&F theo close, ô = 0,5 ATR lúc range xác nhận (làm tròn lên
-  theo tick), đảo chiều 3 ô; đếm số cột từ đầu range đến LPS (chưa có LPS: đến trước SOS; chưa có SOS: đến phiên cuối, **tạm tính**).
+  theo tick), đảo chiều 3 ô; đếm số cột từ đầu range đến LPS (chưa có LPS: đến trước SOS; chưa có SOS: đến cuối range; range chưa kết thúc: đến phiên cuối, **tạm tính**).
   Thận trọng = đáy thấp nhất cấu trúc + cột × ô × 3; tích cực = đường đếm (đáy LPS, chưa có thì support) + cột × ô × 3. Chỉ tính ở pha C, D, E.
 - Đặc tả giao diện cho dev: `docs/handoff-dashboard.md`. Biến môi trường: `WYCKOFF_CONFIG`, `WYCKOFF_CACHE_DIR`, `WYCKOFF_OUT_DIR`,
   `WYCKOFF_MODEL`, `WYCKOFF_NO_LLM`, `WYCKOFF_NO_MARKET`, `WYCKOFF_DEFAULT_SYMBOL`.

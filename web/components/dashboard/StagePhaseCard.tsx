@@ -68,7 +68,7 @@ function DistributionPhase({ phase: d }: { phase: NonNullable<StageInfo["distrib
         {d.reason}.{d.since ? ` Từ ${fmtDate(d.since)}.` : ""}
       </p>
       <Steps steps={d.steps} label="Tiến trình pha phân phối A đến E" />
-      <p className="m-0 text-[13px] text-muted">Chỉ ghi nhận, chưa có điểm tin cậy và mức giá.</p>
+      <p className="m-0 text-[13px] text-muted">Chỉ ghi nhận, chưa có điểm tin cậy và mức xác nhận / vô hiệu.</p>
     </div>
   );
 }
@@ -107,6 +107,7 @@ function RangeBody({ stage, phase: p, confidence: c }: { stage: StageInfo; phase
         <Factors factors={c.factors} />
       </div>
       {stage.distribution_phase && <DistributionPhase phase={stage.distribution_phase} />}
+      {stage.note && <p className="m-0 border-l-2 border-event-dim pl-2.5 text-[13px] leading-relaxed text-fg-2">{stage.note}</p>}
     </>
   );
 }

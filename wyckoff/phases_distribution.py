@@ -42,6 +42,7 @@ class DistStructure:
     rng: TradingRange | None = None
     upthrust_high: float | None = None
     sow: Event | None = None
+    lpsy: Event | None = None
     events: list[Event] = field(default_factory=list)
 
 
@@ -148,6 +149,7 @@ def classify_distribution_phases(df: pd.DataFrame, ranges: list[TradingRange], d
                 cur.sow = e
             elif e.kind == EventType.LPSY and same_range and cur.phase in ("D", "E"):
                 cur.events.append(e)
+                cur.lpsy = e
 
         if cur is not None and cur.phase == "C" and cur.upthrust_high is not None and not np.isnan(atr_ref[t]) \
                 and close[t] > cur.upthrust_high + cfg.spring_invalid_atr * atr_ref[t]:
