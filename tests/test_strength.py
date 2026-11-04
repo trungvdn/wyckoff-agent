@@ -1,10 +1,14 @@
 """Sức mạnh cung cầu trong Markup / Markdown: từng tín hiệu, mức tổng hợp, chống look-ahead, view model."""
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pandas as pd
 import pytest
 
+from wyckoff.agent.payload import build_payload, confidence
+from wyckoff.config import ConfidenceConfig, load_config
 from wyckoff.detectors.models import Swing
 from wyckoff.pipeline import analyze
 from wyckoff.strength import MODERATE, STRONG, WEAK, trend_strength
@@ -167,3 +171,40 @@ def test_stage_view_states() -> None:
     assert stage_view({**CUR, "stage": "Markdown", "structure_type": "Trending Down"}, [])["view"] == "trend"
     t = stage_view(CUR, [{"range_id": 1, "structure_type": None, "stage": "Distribution", "resolved_date": "2024-02-01"}])
     assert t["view"] == "transition" and t["title"] == "Chưa có xu hướng rõ" and t["last_resolved"]["label"] == "Distribution"
+
+
+# ------------------------------------------------------------------ H7: yếu tố tin cậy (mặc định tắt)
+
+@pytest.mark.parametrize("side, level, pts", [
+    ("demand", STRONG, 1), ("demand", MODERATE, 0), ("demand", WEAK, -1),
+    ("supply", STRONG, -1), ("supply", MODERATE, 0), ("supply", WEAK, 0),
+])
+def test_h7a_points(side: str, level: str, pts: int, ohlcv: pd.DataFrame) -> None:
+    res = analyze(ohlcv)
+    s = dataclasses.replace(res.trend_strength(), side=side, level=level)
+    c = confidence(res.current(), [], "trung tính", cfg=ConfidenceConfig(stage_strength=True), strength=s)
+    assert next(f for f in c["factors"] if f["key"] == "stagestrength")["points"] == pts
+
+
+def test_h7a_zero_without_trend(ohlcv: pd.DataFrame) -> None:
+    c = confidence(analyze(ohlcv).current(), [], "trung tính", cfg=ConfidenceConfig(stage_strength=True))
+    assert next(f for f in c["factors"] if f["key"] == "stagestrength")["points"] == 0
+
+
+@pytest.mark.parametrize("prior, pts", [("Markdown", -1), ("Markup", 0), (None, 0)])
+def test_h7b_replaces_range_context(prior: str | None, pts: int, ohlcv: pd.DataFrame) -> None:
+    cur = analyze(ohlcv).current()
+    c = confidence(cur, [], "sau nhịp giảm", cfg=ConfidenceConfig(prior_stage=True), prior_stage=prior)
+    by = {f["key"]: f["points"] for f in c["factors"]}
+    assert by["rangectx"] == 0 and by["priorstage"] == pts
+
+
+def test_h7_off_by_default(ohlcv: pd.DataFrame) -> None:
+    keys = {f["key"] for f in build_payload(analyze(ohlcv), "DEMO")["confidence"]["factors"]}
+    assert not keys & {"stagestrength", "priorstage"}
+
+
+def test_h7_configs_only_set_their_flag() -> None:
+    a, b = load_config("config/h7a.yaml"), load_config("config/h7b.yaml")
+    assert a.confidence == ConfidenceConfig(stage_strength=True) and b.confidence == ConfidenceConfig(prior_stage=True)
+    assert dataclasses.replace(a, confidence=ConfidenceConfig()) == load_config(None)

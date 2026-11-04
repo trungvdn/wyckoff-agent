@@ -88,3 +88,44 @@ Kết quả tham khảo chỉ dùng để đề xuất giả thuyết sau, khôn
 - **Lệch sơ đồ**: thang tin cậy chấm cấu trúc tích lũy; chưa có detector BC / SOW / LPSY và sơ đồ pha phân phối (Bước 2, 3), nên H7 không kiểm tra được phía phân phối, chỉ kiểm tra giai đoạn có giúp chấm cấu trúc tích lũy hay không.
 - **Yếu tố chồng lấn**: H7a có thể trùng một phần với `mkttrend`, `relstrength`, `lps`, `sos`; không gộp nhóm để giữ quy tắc đơn giản, có thể làm mức "cao" nhiều hơn.
 - **Phạm vi tín hiệu**: tín hiệu là các sự kiện và lần mở pha nên phần lớn các phiên Markup / Markdown không có tín hiệu; H7a chủ yếu tác động lên pha A và E. Mô tả cung cầu trên dashboard không được H7 kiểm định ở mọi phiên, trừ phần tham khảo.
+
+## Kết quả (04/11/2026): KHÔNG CHẤP NHẬN cả H7a và H7b, giữ `stage_strength: false`, `prior_stage: false`
+
+Mẫu 311 mã, point-in-time, trên bản chép cache đóng băng (`output/h7/cache`, đa số mã có dữ liệu đến 03/11 hoặc 04/11/2026). Cấu hình mặc định trùng commit `53c93b5` trên bản cache này
+(sự kiện, range, pha, payload trên 311 mã; `study_symbol` trên 10 mã). Đối chứng chạy lại cho đúng các số của H6. Bảng đầy đủ: `output/h7/report.md`
+(`scripts/parallel_study.py`, `scripts/h7_reference.py`, `scripts/h7_eval.py`). Không chỉnh tham số nào sau khi xem kết quả.
+
+| 20 phiên, bexcess % | Đối chứng | H7a | H7b |
+|---|---|---|---|
+| Thấp | −0,26 | −0,28 | −0,26 |
+| Trung bình | +0,48 | +0,53 | +0,59 |
+| Cao [CI 90%] | +1,19 [+0,79; +1,63] | +1,02 [+0,63; +1,39] | +1,19 [+0,76; +1,67] |
+| Cao − thấp [CI 90%] | +1,46 [+1,04; +1,91] | +1,30 [+0,88; +1,70] | +1,45 [+0,98; +1,94] |
+| Cao, 60 phiên, 2023–nay | −1,51 | −1,35 | −1,42 |
+| P(chênh lệch > đối chứng) | – | 0,07 | 0,53 |
+| Tín hiệu đổi mức | – | 1.128 / 29.454 | 1.924 / 29.454 |
+
+- **H7a**: đạt tiêu chí 1, 2, 4; **trượt 3 và 5**. Yếu tố này làm thang tách kém đi: mức cao đông hơn nhưng lợi suất thấp hơn. P = 0,07 nghĩa là gần như chắc chắn không tốt hơn đối chứng.
+- **H7b**: đạt tiêu chí 1, 2, 4; **trượt 3 và 5** (+1,45 so với +1,46, P = 0,53). Trung tính: đổi từ nhãn đà giá sang xu hướng trước range gần như không thay đổi gì, nên hai cách xác định thay thế được cho nhau về điểm tin cậy.
+- Tiêu chí 4 (2023–nay) lần đầu được cả hai giả thuyết cải thiện, nhưng mức cao vẫn âm, và theo quy tắc chốt trước thì một tiêu chí không đủ.
+
+Tham khảo (không dùng để chấm; TB chênh so với nền cùng giai đoạn, không có CI, các phiên chồng lấn mạnh nên không phải ước lượng độc lập):
+
+| Chênh so với nền, % | 20 phiên | 60 phiên | 20 phiên 2018–2022 / 2023–nay | 60 phiên 2018–2022 / 2023–nay |
+|---|---|---|---|---|
+| Trending Up (mọi phiên) | +0,65 | +1,58 | +0,72 / +0,45 | +1,84 / +0,99 |
+| Trending Down (mọi phiên) | −0,54 | −1,12 | −0,53 / −0,65 | −0,94 / −1,78 |
+| Transition, trong range | −0,08 | −0,12 | −0,14 / +0,09 | −0,20 / +0,32 |
+| Transition, ngoài range | −0,08 | −1,19 | −0,11 / −0,20 | −1,93 / −0,54 |
+| Re-accumulation (phiên chốt, n = 1.875) | +1,24 | +3,20 | +1,40 / +0,86 | +4,53 / +0,76 |
+| Initial Accumulation (n = 1.561) | +0,32 | −0,02 | −0,08 / +0,85 | +0,32 / +0,20 |
+| Initial Distribution (n = 1.607) | −0,30 | −1,33 | −0,75 / +0,24 | −2,00 / −0,45 |
+| Re-distribution (n = 1.487) | −0,93 | −2,11 | −1,01 / −0,80 | −1,57 / −2,76 |
+| Markup · mạnh / trung bình / yếu đi | +0,65 / +0,74 / +0,30 | +2,08 / +1,58 / +0,28 | | |
+| Markdown · mạnh / trung bình / yếu đi | −0,36 / −0,63 / −0,59 | −0,97 / −1,25 / −1,03 | | |
+
+Đọc kết quả:
+
+- **Loại cấu trúc có chênh cùng chiều ở cả hai giai đoạn**: Trending Up dương, Trending Down âm; Re-accumulation dương, Re-distribution âm ở cả 20 và 60 phiên. Nhưng đây có thể chỉ là hiệu ứng quán tính giá đã biết, mẫu có thiên lệch sống sót, và số liệu chưa có CI. Muốn dùng phải đăng ký giả thuyết mới.
+- **Mức sức mạnh cung cầu chỉ tách được một phần**: trong Markup, "yếu đi" kém rõ ở 60 phiên. Trong Markdown, "cung mạnh" **không** kém hơn "cung yếu đi", trái với kỳ vọng. Một số tín hiệu đơn lẻ cũng trái lý thuyết (Markup: đỉnh đáy −1 cao hơn +1 ở 20 phiên), nên chỉ nên xem mức này là mô tả.
+- Nhãn đã chốt và mức cung cầu trên dashboard giữ nguyên, ghi rõ là mô tả, không phải dự báo.

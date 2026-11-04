@@ -1,0 +1,3 @@
+# H7b (docs/h7-preregistration.md): thay điểm nhãn đà giá bằng xu hướng trước range. Các khóa khác = mặc định.
+confidence:
+  prior_stage: true

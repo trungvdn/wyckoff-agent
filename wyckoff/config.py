@@ -183,6 +183,9 @@ class ConfidenceConfig:
     after_decline: int = -1      # v1: "accumulation" +1 – backtest: range sau nhịp giảm kém nhất
     after_rise: int = 0          # v1: "distribution" -1 – backtest: không kém range trung tính
     test_max_vol_vs_shakeout: float = 0.5
+    # Giả thuyết H7 (docs/h7-preregistration.md), mặc định tắt
+    stage_strength: bool = False  # H7a: thêm yếu tố sức mạnh cung cầu trong Markup / Markdown
+    prior_stage: bool = False     # H7b: thay điểm nhãn đà giá bằng xu hướng trước range
 
 
 @dataclass(frozen=True)
