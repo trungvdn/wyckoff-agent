@@ -18,7 +18,7 @@ from wyckoff.fmt import vn_g, vn_num, vn_ts
 from wyckoff.phases import CurrentPhase
 from wyckoff.pipeline import AnalysisResult
 
-PAYLOAD_VERSION = "5"   # v5 (04/11/2026): evidence_events có uid / status / status_reason / related (vòng đời event)
+PAYLOAD_VERSION = "6"   # v6 (04/11/2026): current_stage, stage_history (giai đoạn / loại cấu trúc, chỉ ghi nhận)
 
 
 def _r(x: Any, d: int = 2) -> Any:
@@ -163,6 +163,8 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
     ]
     segs = result.phases.segments[-6:]
     recent_ranges = [r for r in result.ranges][-3:]
+    stage = result.current_stage()
+    resolved = [r for r in result.stages.ranges if r.resolved_idx is not None][-6:]
     payload: dict[str, Any] = {
         "payload_version": PAYLOAD_VERSION,
         "symbol": symbol,
@@ -177,6 +179,16 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
             "range_confirmed": _date(rng.confirmed_date) if rng is not None else None,
             "support": _r(cur.support), "resistance": _r(cur.resistance), "atr": _r(cur.atr),
         },
+        "current_stage": {
+            "stage": stage.stage, "structure_type": stage.structure_type, "since": _date(stage.since),
+            "reason": stage.reason, "prior_stage": stage.prior_stage, "candidates": list(stage.candidates),
+            "range_id": stage.range_id,
+        },
+        "stage_history": [
+            {"range_id": r.range_id, "prior_stage": r.prior_stage, "stage": r.stage, "structure_type": r.structure_type,
+             "exit": r.exit_direction, "resolved_date": _date(r.resolved_date)}
+            for r in resolved
+        ],
         "levels": levels,
         "confidence": confidence(cur, struct_events, cur.range_context,
                                  market_confidence_factors(market, cfg.market) if market else None, cfg.confidence),

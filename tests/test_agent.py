@@ -30,7 +30,8 @@ def good_explanation(p: dict) -> dict:
     ev = p["evidence_events"]
     spring = next(e for e in ev if e["kind"] == "Spring")
     return {
-        "summary": f"DEMO đang ở pha C sau Spring ngày {vn_date(spring['date'])} với volume {vn(spring['vol_ratio'])}x TB20.",
+        "summary": f"{p['current_stage']['structure_type']}: DEMO đang ở pha C sau Spring ngày {vn_date(spring['date'])} "
+                   f"với volume {vn(spring['vol_ratio'])}x TB20.",
         "phase_assessment": f"Spring thủng support {vn(p['current_phase']['support'])} rồi đóng cửa quay lại; "
                             f"close_pos phiên thủng {vn(spring['close_pos'])}.",
         "context_assessment": f"Range có SC mở đầu; giá cách resistance {vn(p['recent_bars']['distance_to_resistance_atr'])} ATR.",
@@ -309,7 +310,7 @@ def test_template_has_no_iso_dates_or_field_names(ohlcv: pd.DataFrame) -> None:
 def test_prompt_rules_present() -> None:
     from wyckoff.agent.prompts import PROMPT_VERSION, SYSTEM_PROMPT
 
-    assert PROMPT_VERSION == "4"
+    assert PROMPT_VERSION == "5"
     assert "market_assessment" in SYSTEM_PROMPT and "CHỈ là tham khảo" in SYSTEM_PROMPT
     assert "dd/mm/yyyy" in SYSTEM_PROMPT and "vol_ratio 2,12 -> \"volume 2,12x TB20\"" in SYSTEM_PROMPT
     assert "tối đa 2 câu" in SYSTEM_PROMPT

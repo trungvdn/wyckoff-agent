@@ -15,6 +15,7 @@ from wyckoff.detectors.trading_range import detect_trading_ranges
 from wyckoff.indicators.core import add_indicators
 from wyckoff.indicators.limits import add_limit_flags
 from wyckoff.phases import CurrentPhase, PhaseResult, classify_phases, current_phase
+from wyckoff.stages import CurrentStage, StageResult, classify_stages, current_stage
 
 
 @dataclass
@@ -24,6 +25,7 @@ class AnalysisResult:
     ranges: list[TradingRange]
     events: list[Event]
     phases: PhaseResult
+    stages: StageResult
     cfg: Config
     candidates: list[Event] = field(default_factory=list)   # chưa/không xác nhận – không dùng cho pha/tin cậy
 
@@ -48,8 +50,14 @@ class AnalysisResult:
     def phases_frame(self) -> pd.DataFrame:
         return pd.DataFrame([s.__dict__ for s in self.phases.segments])
 
+    def stages_frame(self) -> pd.DataFrame:
+        return pd.DataFrame([s.__dict__ for s in self.stages.segments])
+
     def current(self) -> CurrentPhase:
         return current_phase(self.df, self.phases, self.cfg)
+
+    def current_stage(self) -> CurrentStage:
+        return current_stage(self.stages)
 
     def since(self, start: str | pd.Timestamp) -> "AnalysisResult":
         """Chỉ giữ phần từ `start` để báo cáo/vẽ. Phân tích đã chạy trên toàn bộ dữ liệu
@@ -60,12 +68,19 @@ class AnalysisResult:
             segments=[g for g in self.phases.segments if g.end_date >= ts],
             structures=self.phases.structures,
         )
+        kept = {r.range_id for r in self.ranges if r.end_date >= ts}
+        st = StageResult(
+            series=self.stages.series.loc[ts:],
+            segments=[g for g in self.stages.segments if g.end_date >= ts],
+            ranges=[r for r in self.stages.ranges if r.range_id in kept],
+        )
         return AnalysisResult(
             df=self.df.loc[ts:],
             swings=[s for s in self.swings if s.date >= ts],
             ranges=[r for r in self.ranges if r.end_date >= ts],
             events=[e for e in self.events if e.date >= ts],
             phases=ph,
+            stages=st,
             cfg=self.cfg,
             candidates=[e for e in self.candidates if e.date >= ts],
         )
@@ -99,7 +114,8 @@ def analyze(ohlcv: pd.DataFrame, cfg: Config | None = None) -> AnalysisResult:
     events.sort(key=lambda e: (e.idx, e.kind.value))
     events, candidates = annotate(df, events, candidates, ranges, cfg)
     phases = classify_phases(df, ranges, events, cfg.phase, cfg.ranges)
-    return AnalysisResult(df=df, swings=swings, ranges=ranges, events=events, phases=phases, cfg=cfg,
+    stages = classify_stages(df, ranges, cfg.stage, cfg.indicators.sma_period)
+    return AnalysisResult(df=df, swings=swings, ranges=ranges, events=events, phases=phases, stages=stages, cfg=cfg,
                           candidates=candidates)
 
 

@@ -19,6 +19,12 @@ indicators:
   sma_period: 50
   ratio_decimals: 2          # làm tròn vol_ratio/spread_atr/close_pos trước khi so ngưỡng
 
+stage:                       # giai đoạn / loại cấu trúc: chỉ ghi nhận, không đổi pha / tin cậy / backtest
+  slope_bars: 20
+  enter_bars: 5
+  exit_bars: 5
+  prior_max_bars: 60
+
 swings:
   left: 5
   right: 5

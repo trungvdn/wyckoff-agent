@@ -186,6 +186,9 @@ def validate_explanation(expl: Any, payload: dict[str, Any]) -> list[str]:
     phase = payload.get("current_phase", {}).get("phase")
     if phase and phase != "invalid" and not re.search(rf"\bpha\s+{re.escape(phase)}\b", expl["summary"], re.I):
         errs.append(f"summary phải nêu đúng pha hiện tại 'pha {phase}'")
+    structure_type = payload.get("current_stage", {}).get("structure_type")
+    if structure_type and structure_type not in expl["summary"]:
+        errs.append(f"summary phải nêu đúng loại cấu trúc do code tính: '{structure_type}'")
     level = payload.get("confidence", {}).get("level")
     if level and level not in expl["confidence_explanation"]:
         errs.append(f"confidence_explanation phải nêu đúng mức tin cậy do code tính: '{level}'")

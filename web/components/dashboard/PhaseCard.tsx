@@ -80,6 +80,7 @@ export function PhaseCard({ phase: p, confidence: c }: { phase: PhaseInfo; confi
       </div>
       <p className="m-0 leading-relaxed text-fg-2">{desc}</p>
       <Steps steps={p.steps} />
+      <p className="m-0 text-[13px] text-muted">Pha và điểm tin cậy tính theo sơ đồ tích lũy.</p>
       <Factors factors={c.factors} />
     </Card>
   );

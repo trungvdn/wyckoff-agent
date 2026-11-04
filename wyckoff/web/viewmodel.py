@@ -68,11 +68,19 @@ def phase_view(phase: str | None) -> dict[str, Any]:
     elif phase == "invalid":
         title = "Cấu trúc vô hiệu"
     else:
-        title = f"Tích lũy · Pha {phase}"
+        title = f"Pha {phase}"
     cur = PHASE_STEPS.index(phase) if phase in PHASE_STEPS else -1
     steps = [{"id": p, "status": "done" if i < cur else "current" if i == cur else "pending"}
              for i, p in enumerate(PHASE_STEPS)]
     return {"phase": phase, "title": title, "steps": steps}
+
+
+def stage_view(current: dict[str, Any], history: list[dict[str, Any]]) -> dict[str, Any]:
+    """Giai đoạn hiện tại cho dashboard. `current`, `history`: payload.current_stage, payload.stage_history."""
+    last = history[-1] if history else None
+    return {**current, "title": current["stage"] or "Chưa phân định",
+            "last_resolved": None if last is None else {
+                "range_id": last["range_id"], "label": last["structure_type"] or last["stage"], "date": last["resolved_date"]}}
 
 
 def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf: str,
@@ -119,6 +127,7 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
         "chart_events": chart_events,
         "ranges": ranges,
         "phase_segments": [{"phase": g.phase, "i0": g.start_idx, "i1": g.end_idx} for g in result.phases.segments],
+        "stage": stage_view(payload["current_stage"], payload["stage_history"]),
         "phase": {**phase_view(cp["phase"]), "since": cp["since"], "reason": cp["reason"],
                   "support": cp["support"], "resistance": cp["resistance"], "atr": cp["atr"],
                   "range_context": cp["range_context"]},

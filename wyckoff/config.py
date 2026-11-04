@@ -250,6 +250,15 @@ class LifecycleConfig:
 
 
 @dataclass(frozen=True)
+class StageConfig:
+    """Giai đoạn / loại cấu trúc (wyckoff/stages.py): chỉ ghi nhận, không đổi pha / tin cậy / backtest."""
+    slope_bars: int = 20              # SMA tăng / giảm so với 20 phiên trước (như market.slope_bars)
+    enter_bars: int = 5               # 5 close liên tiếp đúng phía SMA đang dốc -> có xu hướng
+    exit_bars: int = 5                # 5 close liên tiếp sai phía SMA -> mất xu hướng
+    prior_max_bars: int = 60          # tìm xu hướng trước range trong tối đa 60 phiên
+
+
+@dataclass(frozen=True)
 class PnfConfig:
     box_atr: float = 0.5                # ô P&F = 0.5 ATR lúc range xác nhận (làm tròn lên theo tick)
     reversal: int = 3                   # đảo chiều 3 ô
@@ -276,6 +285,7 @@ class Config:
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     pnf: PnfConfig = field(default_factory=PnfConfig)
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
+    stage: StageConfig = field(default_factory=StageConfig)
 
 
 def _build(cls: type[T], values: dict[str, Any] | None) -> T:

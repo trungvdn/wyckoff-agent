@@ -53,6 +53,18 @@ export interface PhaseInfo {
   range_context: string | null;
 }
 
+export interface StageInfo {
+  stage: string | null; // Accumulation | Markup | Distribution | Markdown; null = chưa phân định
+  structure_type: string;
+  title: string;
+  since: string | null;
+  reason: string;
+  prior_stage: string | null;
+  candidates: string[]; // giả thuyết khi đang trong range, chưa chốt
+  range_id: number | null;
+  last_resolved: { range_id: number; label: string; date: string } | null;
+}
+
 export interface ConfidenceFactor {
   factor: string;
   points: number;
@@ -112,6 +124,7 @@ export interface Analysis {
   chart_events: ChartEvent[];
   ranges: RangeBox[];
   phase_segments: PhaseSegment[];
+  stage: StageInfo;
   phase: PhaseInfo;
   confidence: Confidence;
   events: WyckoffEvent[];

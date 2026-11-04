@@ -32,6 +32,7 @@ wyckoff/data/              fetcher.py (vnstock, chuẩn hóa, kiểm tra), cache
 wyckoff/indicators/core.py ATR Wilder, TB volume, spread, close_pos, SMA
 wyckoff/detectors/         swings.py, trading_range.py, events.py (SC/Spring/SOS), structure.py (PS/AR/ST/LPS/UTAD), lifecycle.py (vòng đời event), models.py
 wyckoff/phases.py          state machine pha A–E, current_phase()
+wyckoff/stages.py          giai đoạn và loại cấu trúc (chỉ ghi nhận), current_stage()
 wyckoff/market.py          bối cảnh thị trường: xu hướng chỉ số, RS, phân kỳ đáy, đối chiếu sự kiện
 wyckoff/charts/plot.py     plotly: nến + volume + range + sự kiện
 wyckoff/agent/             GĐ2: payload.py, prompts.py, llm.py, validate.py, explain.py, report.py
@@ -96,6 +97,30 @@ SC/AR/ST gắn vào range khi |SC − phiên bắt đầu range| ≤ 10 phiên v
 D → thoát range / mức theo `phase.d_invalid_mode` (mặc định `range_mid`: giữa range; `lps_or_res_atr` (v1): đáy LPS hoặc
 resistance − 1 ATR; `support`: support – chọn theo backtest: sau khi thủng mức v1 hoặc support, giá vẫn tăng hơn chỉ số); E → quay lại dưới resistance. Cảnh báo khi phiên cuối đóng cửa sát đáy (close_pos ≤ 0.2) với volume ≥ 1.2× TB20,
 và ở pha C khi Spring xuyên ≥ 1 ATR dưới support (`phase.deep_spring_atr`).
+
+## Giai đoạn và loại cấu trúc (`wyckoff/stages.py`, chỉ ghi nhận)
+
+Tầng 1 (Accumulation, Markup, Distribution, Markdown) suy ra từ tầng 2 (loại cấu trúc). State machine causal, chỉ dùng close, SMA50 và
+range đã xác nhận / đã kết thúc tại phiên đó. **Không đổi** sự kiện, pha, điểm tin cậy, backtest (khóa `stage` trong YAML).
+
+| Trạng thái | Khi nào |
+|---|---|
+| **Trending Up** (Markup) | 5 close liên tiếp trên SMA50 đang tăng (so với 20 phiên trước), hoặc range thoát lên |
+| **Trending Down** (Markdown) | 5 close liên tiếp dưới SMA50 đang giảm, hoặc range thoát xuống |
+| **Transition / Uncertain** | Chưa có xu hướng; 5 close liên tiếp sai phía SMA50; hoặc đang trong range đã xác nhận |
+
+Trong range chỉ có hai giả thuyết theo xu hướng trước range (tìm trong 60 phiên; không có thì dùng nhãn đà giá 120 phiên). Nhãn chốt khi range thoát:
+
+| Trước range | Thoát lên | Thoát xuống |
+|---|---|---|
+| Markup | Re-accumulation | Initial Distribution |
+| Markdown | Initial Accumulation | Re-distribution |
+| Không rõ | Accumulation (chưa rõ loại) | Distribution (chưa rõ loại) |
+
+- Nhãn đã chốt **mô tả điều đã xảy ra, không phải dự báo**: hướng thoát range gần như 50/50 ở mọi bối cảnh (311 mã).
+- `result.stages.series` là nhãn như biết tại từng phiên, không ghi đè về sau; `result.stages.ranges` là nhãn từng range (`resolved_idx` = phiên chốt).
+- Pha A–E và điểm tin cậy vẫn theo sơ đồ tích lũy, nên pha và giai đoạn có thể khác nhau (ví dụ SOS reclaim đưa về pha D trong khi giai đoạn còn Markdown).
+- Đầu ra: `<MÃ>_stages.csv`; payload v6 thêm `current_stage`, `stage_history`; prompt v5; `summary` của LLM phải nêu đúng loại cấu trúc.
 
 ## Chống look-ahead
 - Chỉ báo causal; swing có độ trễ xác nhận; range xử lý online; Spring xác nhận ở phiên quay lại.

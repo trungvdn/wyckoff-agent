@@ -8,6 +8,7 @@ import { ExplanationProvider } from "./ExplanationContext";
 import { PhaseCard } from "./PhaseCard";
 import { PriceChart } from "./PriceChart";
 import { ScenarioCard } from "./ScenarioCard";
+import { StageCard } from "./StageCard";
 
 /** Bố cục dashboard: biểu đồ ≈2/3 | cột phải; hàng dưới Kịch bản | Hỏi Agent. Một cột khi ≤ 1080px. */
 export function Dashboard({ data }: { data: Analysis }) {
@@ -18,6 +19,7 @@ export function Dashboard({ data }: { data: Analysis }) {
       <main className="grid grid-cols-1 gap-4 sm:gap-5 wide:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <PriceChart data={data} />
         <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
+          <StageCard stage={data.stage} />
           <PhaseCard phase={data.phase} confidence={data.confidence} />
           <EventsCard events={data.events} />
         </div>
