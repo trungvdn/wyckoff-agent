@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+/* Token thiết kế (giữ nguyên giá trị của bản HTML/CSS). Tailwind sinh tiện ích theo tên:
+   bg-surface, text-muted, border-line, font-mono, animate-shimmer...
+   `static`: luôn xuất biến CSS, vì biểu đồ canvas đọc màu trực tiếp từ các biến này. */
+@theme static {
+  --color-bg: #0B1015;
+  --color-surface: #121A21;
+  --color-sunken: #0F161C;
+  --color-raised: #1A2730;
+  --color-line: #22303A;
+  --color-line-strong: #2A3741;
+  --color-grid: #1B252D;
+  --color-fg: #E6EDF3;
+  --color-fg-2: #C3CDD5;
+  --color-muted: #9AA7B2;
+  --color-faint: #7F8D99;
+  --color-pos: #2DD4BF;          /* tín hiệu tích cực, nến tăng */
+  --color-pos-hover: #5EEAD4;
+  --color-pos-dim: #1F6F67;
+  --color-on-pos: #062A26;
+  --color-event: #F5B841;        /* sự kiện Wyckoff */
+  --color-event-dim: #6B5320;
+  --color-neg: #F87171;          /* nến giảm, vô hiệu */
+  --color-neg-dim: #6E3434;
+  --color-vol: #4A5866;
+  --color-pending: #26323C;
+  --color-range: #194747;
+
+  /* Dải nền theo pha trên biểu đồ (A-E, vô hiệu); vẽ với độ mờ thấp */
+  --color-phase-a: #F59E0B;
+  --color-phase-b: #94A3B8;
+  --color-phase-c: #34D399;
+  --color-phase-d: #38BDF8;
+  --color-phase-e: #818CF8;
+  --color-phase-invalid: #F87171;
+
+  --text-2xs: 11px;
+
+  /* > 1080px: bố cục 2 cột như thiết kế 1440; nhỏ hơn: một cột */
+  --breakpoint-wide: 1081px;
+
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-blink: blink 1s ease-in-out infinite;
+
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+  @keyframes blink {
+    50% { opacity: 0.35; }
+  }
+}
+
+/* Font do next/font tự host (biến gắn ở <html> trong app/layout.tsx) */
+@theme inline {
+  --font-sans: var(--font-plex-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, Consolas, monospace;
+}
+
+@layer base {
+  html { color-scheme: dark; -webkit-text-size-adjust: 100%; }
+  body { @apply bg-bg font-sans text-sm leading-normal text-fg antialiased; }
+  :focus-visible { @apply outline-2 outline-offset-2 outline-pos; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

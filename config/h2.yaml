@@ -1,0 +1,10 @@
+# Giả thuyết 2 (đăng ký trước 03/11/2026): thị trường uptrend chỉ +1 khi cổ phiếu cũng mạnh hơn chỉ số
+# (RS 60 phiên > +3%), ngược lại 0. Downtrend giữ -1.
+# Đã CHẤP NHẬN trên VNSmallCap và là mặc định từ 03/11/2026 -> file này giờ giống config/default.yaml.
+# Để chạy lại "v2 trước GT2", dùng config/v2_pre_gt2.yaml.
+market:
+  trend_up_requires_rs: true
+
+# Tái lập kết quả trước khi có SOS reclaim (04/11/2026)
+phase:
+  reclaim_window: 0

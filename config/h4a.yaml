@@ -1,0 +1,4 @@
+# Giả thuyết H4a (docs/h4-preregistration.md): SC hai phiên.
+sc:
+  zone_bars: 3
+  zone_undercut_atr: 0.5

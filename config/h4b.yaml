@@ -1,0 +1,7 @@
+# Giả thuyết H4b (docs/h4-preregistration.md): H4a + range neo theo SC–AR.
+sc:
+  zone_bars: 3
+  zone_undercut_atr: 0.5
+
+ranges:
+  anchor_sc_ar: true

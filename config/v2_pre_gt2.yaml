@@ -1,0 +1,7 @@
+# v2 trước khi bật GT2 (dùng để tái lập các kiểm tra ngoài mẫu 03/11/2026).
+market:
+  trend_up_requires_rs: false
+
+# Tái lập kết quả trước khi có SOS reclaim (04/11/2026)
+phase:
+  reclaim_window: 0

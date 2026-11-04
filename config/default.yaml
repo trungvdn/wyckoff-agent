@@ -1,0 +1,171 @@
+# Ngưỡng mặc định giai đoạn 1. Chỉ cần ghi các khóa muốn thay đổi.
+data:
+  source: VCI
+  fallback_sources: [KBS]    # thử thêm khi nguồn chính thiếu lịch sử
+  exchange: HOSE             # bước giá: HOSE 10/50/100đ; HNX, UPCOM 100đ
+  coverage_tolerance_days: 15
+  chunk_days: 365
+  warmup_bars: 120           # tải thêm ~120 phiên trước start để khởi động chỉ báo
+  price_limit: 0.07          # HOSE 7%; HNX 0.10; UPCoM 0.15
+  limit_tolerance: 0.005
+  overlap_days: 10
+  adjust_check_tolerance: 0.001
+  market_close_hour: 15
+  timezone: Asia/Ho_Chi_Minh
+
+indicators:
+  atr_period: 14
+  vol_ma_period: 20
+  sma_period: 50
+  ratio_decimals: 2          # làm tròn vol_ratio/spread_atr/close_pos trước khi so ngưỡng
+
+swings:
+  left: 5
+  right: 5
+
+ranges:
+  max_height_atr: 6.0
+  anchor_sc_ar: false        # H4b: AR xác nhận -> mở range theo đáy SC và đỉnh AR
+  min_bars: 20
+  min_swing_highs: 2
+  min_swing_lows: 2
+  max_slope_atr: 0.1
+  close_tolerance_atr: 0.5
+  exit_atr: 0.5
+  exit_bars: 3
+  max_lookback: 250
+  context_lookback: 120      # bối cảnh range = lợi suất 120 phiên trước phiên bắt đầu range
+  after_decline_max_return: -0.15   # nhãn "sau nhịp giảm" (chỉ là đà giá, không phải accumulation)
+  after_rise_min_return: 0.30       # nhãn "sau nhịp tăng"
+
+sc:
+  min_vol_ratio: 2.0
+  min_spread_atr: 1.5
+  min_close_pos: 0.5
+  trend_lookback: 60
+  min_decline: 0.15
+  require_below_sma: true
+  lowest_low_lookback: 60
+  cooldown_bars: 10
+  zone_bars: 2               # climax đóng cửa thấp: chờ 2 phiên có close > điểm giữa nến climax
+  zone_undercut_atr: 0.0     # H4a: được thủng đáy climax tối đa k ATR trong các phiên chờ
+  spread_measure: true_range # true_range (tính cả gap) | range (high - low)
+  floor_chain_min_days: 3    # dạng VN: >= 3 phiên giảm sàn trong 10 phiên trước phiên rút chân
+  floor_chain_window: 10
+  fail_atr: 0.5              # SC failed: close < đáy SC - 0.5 ATR
+  fail_window: 30            #   trong 30 phiên sau xác nhận
+  ar_min_atr: 3.0            #   và trước khi có AR (close >= đáy SC + 3 ATR)
+
+spring:
+  min_penetration_atr: 0.1   # thủng tối thiểu = max(0.1 ATR, 1 tick)
+  min_penetration_ticks: 1
+  max_recovery_bars: 3
+  recovery_min_ticks: 1      # phiên hồi: close >= support + 1 tick
+  recovery_min_close_pos: 0.5
+  min_bars_after_confirm: 5
+  merge_bars: 10
+  max_vol_ratio: 1.0         # < 1.0x: Spring volume thấp; >= 1.0x: Shakeout, cần Test
+  test_window: 15
+  test_vol_factor: 0.6
+  test_proximity_atr: 0.1
+  allowed_contexts: ["sau nhịp giảm", "trung tính", "sau nhịp tăng", "chưa rõ"]   # bỏ một nhãn để không tìm Spring trong range đó
+
+sos:
+  min_breakout_atr: 0.2
+  min_spread_atr: 1.2
+  min_vol_ratio: 1.5
+  min_close_pos: 0.7
+
+ps:
+  lookback: 40               # tìm trong 40 phiên trước SC, lấy phiên gần SC nhất
+  min_vol_ratio: 1.5
+  min_close_pos: 0.5
+  min_spread_atr: 1.0
+  require_below_sma: true
+
+ar:
+  pivot_bars: 3              # đỉnh pivot 3 phiên mỗi bên, xác nhận sau 3 phiên
+  min_rally_atr: 3.0         # đỉnh AR >= đáy SC + 3 ATR
+  window: 30
+
+st:
+  window: 60                 # trong 60 phiên sau AR
+  band_below_atr: 0.5        # low trong [đáy SC - 0.5 ATR, đáy SC + 1.0 ATR]
+  band_above_atr: 1.0
+  max_vol_vs_sc: 0.7
+  max_spread_vs_sc: 1.0
+  min_gap_bars: 10
+
+lps:
+  window: 20                 # trong 20 phiên sau SOS
+  hold_above_res_atr: 1.0    # low >= resistance - 1 ATR
+  min_pullback_atr: 0.5
+  max_vol_ratio: 1.0
+  max_spread_atr: 1.0
+  confirm_bars: 3            # xác nhận: close > high phiên LPS trong 3 phiên
+
+utad:
+  min_bars_after_confirm: 20
+  min_penetration_atr: 0.1   # high > resistance + max(0.1 ATR, 1 tick)
+  min_penetration_ticks: 1
+  max_return_bars: 3         # đóng cửa lại <= resistance - 1 tick, close_pos <= 0.5
+  return_ticks: 1
+  max_close_pos: 0.5
+
+confidence:                  # thang tin cậy v2 (hiệu chỉnh theo backtest 03/11/2026)
+  sc: 1
+  st: 1
+  spring: 0                  # v1 +1: không có edge trong backtest; vẫn là mốc pha C
+  test: 0                    # v1 +1: theo sau là lợi suất âm ở 20 phiên
+  sos: 1
+  lps: 1
+  after_decline: -1          # v1 "accumulation" +1: nhóm kém nhất ở 60 phiên
+  after_rise: 0              # v1 "distribution" -1: không kém nhóm trung tính
+  test_max_vol_vs_shakeout: 0.5
+
+phase:
+  attach_max_bars: 10        # gắn SC vào range: |SC - phiên bắt đầu range| <= 10 phiên
+  attach_max_atr: 1.0        #   và |đáy SC - support| <= 1 ATR
+  spring_invalid_atr: 0.5    # pha C vô hiệu: close < đáy Spring - 0.5 ATR
+  d_invalid_atr: 1.0         # pha D, mode lps_or_res_atr: close < resistance - 1 ATR (chưa có LPS)
+  d_invalid_mode: range_mid        # range_mid (giữa range, mặc định v2) | lps_or_res_atr (v1) | support
+  sc_failed_invalidates: false     # false: SC failed = vùng climax kéo dài, giữ pha A chờ SC mới
+  deep_spring_atr: 1.0             # cảnh báo khi Spring xuyên >= 1 ATR dưới support
+  reclaim_window: 30               # range thoát xuống: 30 phiên chờ SOS lấy lại resistance (0 = tắt)
+
+market:
+  enabled: true
+  benchmarks: {HOSE: VNINDEX, HNX: HNXINDEX, UPCOM: UPCOMINDEX}   # chỉ số so sánh tự chọn theo data.exchange
+  index_source: KBS          # Market().index(...).ohlcv; dự phòng Quote(...) nguồn VCI
+  sma_fast: 50
+  sma_slow: 200
+  slope_bars: 20             # uptrend: close > SMA50 > SMA200 và SMA50 tăng so với 20 phiên trước
+  return_windows: [20, 60, 120]
+  drawdown_lookback: 250
+  rs_windows: [20, 60]       # RS = giá cổ phiếu / chỉ số
+  rs_sma: 50
+  divergence_window: 20      # phân kỳ đáy: chỉ số thủng đáy 20 phiên trước, cổ phiếu thì không
+  confidence_rs_window: 60
+  rs_neutral_band_pct: 3.0   # |RS 60 phiên| < 3% -> đi ngang (0 điểm); RS + phân kỳ gộp tối đa ±1
+  trend_up_requires_rs: true # GT2 (kiểm tra ngoài mẫu VNSmallCap 03/11/2026): uptrend chỉ +1 khi RS 60 phiên > +3%
+
+backtest:
+  universe: VN30             # nhóm vnstock Listing().symbols_by_group (danh sách HIỆN TẠI -> thiên lệch sống sót)
+  start: "2018-01-01"
+  horizons: [5, 20, 60]      # vào lệnh ở open phiên sau phiên xác nhận, đo đến close phiên thứ H
+  cost_pct: 0.3              # chi phí khứ hồi (phí + thuế bán), %
+  min_history_bars: 250
+  scenario_max_bars: 120
+  bootstrap_n: 2000
+  ci: 0.9
+  seed: 7
+  point_in_time: true        # tính lại pha / tin cậy tại ngày xác nhận chỉ bằng dữ liệu đến ngày đó
+  beta_window: 250          # beta point-in-time từ lợi suất ngày 250 phiên trước tín hiệu
+  beta_min_periods: 120
+  split_date: "2023-01-01"   # chẩn đoán độ ổn định: trước / sau mốc này
+  rate_limit_wait_s: 65      # hết hạn mức lượt gọi theo phút (vnstock Cộng đồng: 60/phút) -> chờ rồi thử lại
+  rate_limit_retries: 3
+
+lifecycle:                   # vòng đời event (quy chuẩn 04/11/2026) – chỉ ghi trạng thái, không đổi pha/tin cậy/backtest
+  watch_bars: 60             # theo dõi vô hiệu hóa Spring / SOS / LPS tối đa 60 phiên sau xác nhận
+  lps_invalid_atr: 0.5       # LPS vô hiệu: close < đáy LPS - 0.5 ATR (Spring: phase.spring_invalid_atr; SOS: phase.d_invalid_mode)

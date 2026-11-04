@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Dữ liệu và kết quả sinh ra (tải lại bằng vnstock / chạy lại run.py, backtest.py)
+cache/
+output/
+
+# Môi trường, file tạm
+.env
+.env.*
+!.env.example
+_to_delete/
+.claude/

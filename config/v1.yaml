@@ -1,0 +1,16 @@
+# Quy tắc v1 (trước bước 2) – chỉ dùng để so sánh với v2 trên cùng dữ liệu (kiểm tra ngoài mẫu).
+# Các khóa không ghi lấy theo mặc định trong code (= v2).
+confidence:
+  spring: 1
+  test: 1
+  after_decline: 1           # v1 "accumulation" +1
+  after_rise: -1             # v1 "distribution" -1
+
+phase:
+  sc_failed_invalidates: true
+  d_invalid_mode: lps_or_res_atr
+  deep_spring_atr: 99.0      # tắt cảnh báo Spring xuyên sâu
+  reclaim_window: 0          # chưa có SOS reclaim
+
+market:
+  trend_up_requires_rs: false   # v1/v2 trước GT2: uptrend luôn +1

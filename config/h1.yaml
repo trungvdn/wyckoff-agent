@@ -1,0 +1,9 @@
+# Giả thuyết 1 (đăng ký trước 03/11/2026): bối cảnh thị trường (xu hướng, RS, phân kỳ) tính theo chỉ số
+# cùng nhóm vốn hóa thay vì VNINDEX. Lợi suất vượt để chấm vẫn đo so với VNINDEX. Còn lại = v2.
+market:
+  context_benchmark: VNSMALLCAP   # chỉ số VNSmallCap (vnstock: Quote nguồn VCI; "VNSML" không có dữ liệu)
+  trend_up_requires_rs: false     # tái lập đúng phép thử 03/11/2026 (khi đó GT2 chưa là mặc định)
+
+# Tái lập kết quả trước khi có SOS reclaim (04/11/2026)
+phase:
+  reclaim_window: 0

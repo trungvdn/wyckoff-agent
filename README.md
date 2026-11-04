@@ -17,6 +17,7 @@ python run.py HPG --start 2020-01-01 --explain --no-llm  # báo cáo theo mẫu,
 python run.py HPG --start 2020-01-01 --explain --no-market  # không dùng bối cảnh VN-Index
 python backtest.py                       # event study trên VN30 hiện tại, từ 2018 -> output/backtest/
 python backtest.py --symbols HPG,FPT,VNM --no-pit   # danh sách tự chọn, bỏ tính lại tin cậy theo ngày
+python serve.py                          # API cho web dashboard (xem mục "Web dashboard")
 ```
 
 Đầu ra trong `output/`: `HPG_wyckoff.html` (biểu đồ, nền tô theo pha), `HPG_events.csv`, `HPG_ranges.csv`,
@@ -29,13 +30,17 @@ config/default.yaml        mọi ngưỡng (chỉ cần ghi khóa muốn đổi)
 wyckoff/config.py          dataclass cấu hình + load YAML (báo lỗi khóa sai)
 wyckoff/data/              fetcher.py (vnstock, chuẩn hóa, kiểm tra), cache.py, loader.py (get_ohlcv)
 wyckoff/indicators/core.py ATR Wilder, TB volume, spread, close_pos, SMA
-wyckoff/detectors/         swings.py, trading_range.py, events.py (SC/Spring/SOS), structure.py (PS/AR/ST/LPS/UTAD), models.py
+wyckoff/detectors/         swings.py, trading_range.py, events.py (SC/Spring/SOS), structure.py (PS/AR/ST/LPS/UTAD), lifecycle.py (vòng đời event), models.py
 wyckoff/phases.py          state machine pha A–E, current_phase()
 wyckoff/market.py          bối cảnh thị trường: xu hướng chỉ số, RS, phân kỳ đáy, đối chiếu sự kiện
 wyckoff/charts/plot.py     plotly: nến + volume + range + sự kiện
 wyckoff/agent/             GĐ2: payload.py, prompts.py, llm.py, validate.py, explain.py, report.py
 wyckoff/backtest/          event study: metrics.py, study.py, summary.py, report.py, universe.py
 wyckoff/pipeline.py        analyze(): chỉ báo -> swing -> range -> sự kiện -> pha; .current(), .since()
+wyckoff/service.py         dùng chung CLI/web: tải theo khung (1D, 1W gộp từ ngày), phân tích, bối cảnh thị trường
+wyckoff/pnf.py             mục tiêu Nhân–Quả: đếm ngang Point & Figure
+wyckoff/web/               API FastAPI (app.py) + view model cho dashboard
+web/                       giao diện Next.js (App Router) + Tailwind CSS, gọi API của wyckoff/web
 wyckoff/synthetic.py       chuỗi giá có cài sẵn SC/Range/Spring/SOS
 tests/                     pytest (gồm test chống look-ahead)
 ```
@@ -58,12 +63,13 @@ Các tỉ số được **làm tròn 2 chữ số** trước khi so ngưỡng (0
 | Sự kiện | Điều kiện |
 |---|---|
 | **SC** | Điều kiện nền: vol_ratio > 2.0; giảm ≥ 15% từ close cao nhất 60 phiên; close < SMA50; low thấp nhất 60 phiên. **Dạng climax**: True Range (tính cả gap) > 1.5 ATR; xác nhận khi close_pos ≥ 0.5 (ngay phiên đó) **hoặc** trong 2 phiên sau có close > điểm giữa nến climax mà không thủng đáy climax. **Dạng chuỗi sàn (VN)**: ≥ 3 phiên giảm sàn (Δclose ≤ −6.5%) trong 10 phiên trước, phiên hiện tại close_pos ≥ 0.5, không xét biên độ. SC mới trong 10 phiên chỉ giữ nếu đáy thấp hơn |
-| **SC failed** | Sau khi SC xác nhận, trong 30 phiên và trước khi có AR (close cao nhất ≥ đáy SC + 3 ATR): close < đáy SC − 0.5 ATR |
-| **Bối cảnh range** | Lợi suất 120 phiên trước phiên bắt đầu range: ≤ −15% accumulation, ≥ +30% distribution, còn lại neutral; thiếu lịch sử → unknown |
+| **SC failed** | Sau khi SC xác nhận, trong 30 phiên và trước khi có AR (close cao nhất ≥ đáy SC + 3 ATR): close < đáy SC − 0.5 ATR. **v2: không vô hiệu cấu trúc** – coi là vùng climax kéo dài, giữ pha A chờ SC mới (`phase.sc_failed_invalidates: true` để quay về v1) |
+| **Bối cảnh range** | Lợi suất 120 phiên trước phiên bắt đầu range: ≤ −15% **sau nhịp giảm**, ≥ +30% **sau nhịp tăng**, còn lại **trung tính**; thiếu lịch sử → **chưa rõ**. Chỉ là đà giá trước range, không phải nhận định accumulation / distribution |
 | **Spring** | Trong range có bối cảnh thuộc `spring.allowed_contexts` (mặc định: tất cả). Range đã xác nhận ≥ 5 phiên trước. Phiên thủng đầu tiên: low < support − max(0.1 ATR, 1 tick). Phiên hồi trong ≤ 3 phiên (tính cả phiên thủng): close ≥ support + 1 tick **và** close_pos ≥ 0.5. Mọi phiên có low < support có vol_ratio < 1.0 → **Spring volume thấp**, xác nhận tại phiên hồi |
 | **Spring (shakeout) + Test** | Như trên nhưng có phiên thủng vol_ratio ≥ 1.0 → chỉ xác nhận khi có **Test** trong 15 phiên sau phiên hồi: low ≥ đáy shakeout, low ≤ support + 0.1 ATR, volume < 0.6 × volume phiên thủng lớn nhất, support ≤ close ≤ resistance |
 | **Gộp Spring** | Spring mới có phiên thủng cách Spring trước < 10 phiên chỉ được giữ nếu đáy thấp hơn (xét theo thứ tự xác nhận, không nhìn trước) |
 | **SOS** | trong range (hoặc các phiên đang phá range trước khi xác nhận thoát); close > open; close > resistance + 0.2 ATR; spread_atr > 1.2; vol_ratio > 1.5; close_pos ≥ 0.7 |
+| **SOS reclaim** | Range đã thoát xuống; trong 30 phiên sau (`phase.reclaim_window`, chưa có range mới xác nhận) phiên đầu tiên thỏa đúng quy tắc SOS so với resistance cũ. Đưa cấu trúc từ invalid về D; sau đó 3 close > resistance + 0.5 ATR → E, 3 close < support − 0.5 ATR → invalid. Tin cậy 0 điểm: trên 308 mã, bexcess 20 phiên +1,62% (CI 90% −0,50 đến +3,78; nền +0,34%), 60 phiên +3,90% (nền +1,72%), giai đoạn 2023–nay −1,06% |
 | **PS** | Trong 40 phiên trước SC (lấy phiên gần nhất), close < SMA50: vol_ratio ≥ 1.5, close_pos ≥ 0.5, spread_atr ≥ 1.0, low > đáy SC. Xác nhận tại phiên xác nhận SC |
 | **AR** | Đỉnh pivot (3 phiên mỗi bên) đầu tiên trong 30 phiên sau SC với high ≥ đáy SC + 3 ATR. Xác nhận ở pivot + 3. SC đã failed thì không có AR |
 | **ST** | Sau AR, trong 60 phiên: low ∈ [đáy SC − 0.5 ATR, đáy SC + 1 ATR], volume < 0.7 × volume SC, biên độ < biên độ SC, close ≥ đáy SC; các ST cách nhau ≥ 10 phiên |
@@ -83,18 +89,41 @@ SC/AR/ST gắn vào range khi |SC − phiên bắt đầu range| ≤ 10 phiên v
 | C | Spring (volume thấp, hoặc shakeout + Test) | → D khi SOS |
 | D | SOS (LPS được ghi nhận) | → E khi range thoát lên |
 | E | Range thoát lên (3 close > resistance + 0.5 ATR) | — |
-| invalid | SC failed; UTAD; range thoát xuống; pha C có close < đáy Spring − 0.5 ATR | cấu trúc mới khi có SC hoặc range mới |
+| invalid | UTAD; range thoát xuống; pha C có close < đáy Spring − 0.5 ATR | cấu trúc mới khi có SC hoặc range mới; → D khi có **SOS reclaim** |
 
 `current_phase()` trả về pha, ngày bắt đầu, support/resistance, ATR, bằng chứng (các sự kiện của cấu trúc) và
-**mức xác nhận / vô hiệu tính sẵn**: A → ST / SC failed; B → Spring, SOS / range thoát xuống; C → SOS / đáy Spring − 0.5 ATR;
-D → thoát range / đáy LPS (hoặc resistance − 1 ATR); E → quay lại dưới resistance. Kèm cảnh báo khi phiên cuối đóng cửa sát đáy
-(close_pos ≤ 0.2) với volume ≥ 1.2× TB20.
+**mức xác nhận / vô hiệu tính sẵn**: A → ST / thủng đáy SC (vùng climax kéo dài, không vô hiệu); B → Spring, SOS / range thoát xuống; C → SOS / đáy Spring − 0.5 ATR;
+D → thoát range / mức theo `phase.d_invalid_mode` (mặc định `range_mid`: giữa range; `lps_or_res_atr` (v1): đáy LPS hoặc
+resistance − 1 ATR; `support`: support – chọn theo backtest: sau khi thủng mức v1 hoặc support, giá vẫn tăng hơn chỉ số); E → quay lại dưới resistance. Cảnh báo khi phiên cuối đóng cửa sát đáy (close_pos ≤ 0.2) với volume ≥ 1.2× TB20,
+và ở pha C khi Spring xuyên ≥ 1 ATR dưới support (`phase.deep_spring_atr`).
 
 ## Chống look-ahead
 - Chỉ báo causal; swing có độ trễ xác nhận; range xử lý online; Spring xác nhận ở phiên quay lại.
 - Nến hôm nay bị bỏ nếu chạy trước 15:00 giờ VN (nến chưa hoàn tất).
 - `tests/test_detectors.py::test_no_lookahead` chạy pipeline trên dữ liệu cắt tại nhiều thời điểm
   và đòi hỏi kết quả (sự kiện, range, chuỗi pha) trùng với dữ liệu đầy đủ (lọc theo `confirmed_idx`).
+
+## Vòng đời event (quy chuẩn 04/11/2026, bước 1)
+
+Chỉ **ghi nhận**, không đổi pha / tin cậy / backtest: `result.events` vẫn đúng tập event đã xác nhận như trước
+(đã so trên 307 mã trong cache: sự kiện, chuỗi pha, pha hiện tại trùng khớp 100%).
+
+- **Trạng thái** (`Event.history`, `Event.status`, `Event.status_at(t)`): DETECTED → CANDIDATE → CONFIRMED → INVALIDATED / REVISED.
+  `idx` = ngày event, `confirmed_idx` = ngày xác nhận (giữ nguyên quy tắc detector hiện tại).
+- **Candidate** (`result.candidates`, `confirmed_idx = -1`): SC dạng vùng không xác nhận, phiên thủng support không hồi trong 3 phiên,
+  shakeout không có Test trong 15 phiên / thủng đáy shakeout / range kết thúc → INVALIDATED; SC trong cooldown và Spring bị gộp → REVISED.
+  Chỉ SC và Spring ghi mốc DETECTED/CANDIDATE trước xác nhận (vì chỉ hai loại này ghi cả candidate thất bại; loại khác biết từ phiên xác nhận).
+- **Vô hiệu hóa sau xác nhận** (trong `lifecycle.watch_bars` = 60 phiên): SC ← có SC failed (PS của SC đó theo);
+  Spring ← close < đáy Spring − `phase.spring_invalid_atr` ATR (Test theo); SOS ← close dưới mức vô hiệu pha D (`phase.d_invalid_mode`, mặc định giữa range);
+  LPS ← close < đáy LPS − `lifecycle.lps_invalid_atr` (0,5) ATR. AR, ST, UTAD chưa có quy tắc vô hiệu.
+- **ID ổn định** `event_id`: `<LOẠI>-<yyyymmdd>[-TR<ngày bắt đầu range>][-SC|-SPRING|-SOS<ngày event gốc>][-RECLAIM]` – chỉ dựa vào ngày,
+  không đổi khi đổi `--start` (range_id thì có thể đổi).
+- **Quan hệ**: `related_event_ids` (PS/AR/ST/SC failed ↔ SC, Test ↔ Spring, LPS ↔ SOS), `test_of_event_id` (ST → SC, Test → Spring);
+  `result.structure_of()` = event_id → structure_id.
+- `result.snapshot(t)`: mọi event + candidate đã biết tại phiên t với trạng thái lúc đó.
+  `tests/test_lifecycle.py::test_lifecycle_no_lookahead`: trạng thái tại t trên dữ liệu đầy đủ == trạng thái cuối khi chỉ có dữ liệu đến t.
+- Đầu ra: `<MÃ>_events.csv` thêm cột `event_id, status, history, invalidated_date, related_event_ids, test_of_event_id, structure_id`
+  và gồm cả candidate; payload v5 thêm `uid, status, status_reason, related` cho từng sự kiện bằng chứng (prompt chưa đổi).
 
 ## Dữ liệu
 - `vnstock` 5.x (tương thích 3.x). Nguồn chính VCI, dự phòng KBS (giá nghìn đồng, đã điều chỉnh).
@@ -113,8 +142,9 @@ Nguyên tắc: **code tính mọi con số, LLM chỉ diễn giải và đánh g
 
 1. `payload.py` – gói JSON tất định (~5 KB): pha hiện tại, mức giá có ID (`confirm_0`, `invalidate_0`...),
    sự kiện bằng chứng (`ev_0`...), 20 phiên gần nhất, lịch sử pha/range, cảnh báo, ngưỡng quy tắc,
-   **mức tin cậy do code tính** (SC +1, ST +1, Spring +1, Test < 0,5× shakeout +1, SOS +1, LPS +1,
-   bối cảnh accumulation +1 / distribution −1, mỗi cảnh báo −1 (SOS/LPS thất bại −2); ≤ 0 thấp, 1–2 trung bình, ≥ 3 cao).
+   **mức tin cậy do code tính** – thang v2 hiệu chỉnh theo backtest (`confidence` trong YAML): SC +1, ST +1, SOS +1, LPS +1,
+   Spring 0 và Test 0 (vẫn ghi để minh bạch, là mốc pha C), range sau nhịp giảm ≥ 15% −1, sau nhịp tăng 0,
+   mỗi cảnh báo −1 (SOS/LPS thất bại, quay lại range −2); ≤ 0 thấp, 1–2 trung bình, ≥ 3 cao.
 2. `llm.py` – Claude qua Anthropic API (mặc định `claude-sonnet-5-5`), **structured outputs** (`output_config` +
    `json_schema`; Sonnet/Opus 5.5 không hỗ trợ ép `tool_choice`). Key lấy từ biến môi trường `ANTHROPIC_API_KEY`.
 3. `validate.py` – kiểm soát đầu ra (prompt v2): đúng schema; không có tên trường kỹ thuật (`vol_ratio`... – trừ `close_pos`),
@@ -146,7 +176,7 @@ Chỉ số so sánh tự chọn theo sàn (`market.benchmarks`: HOSE → VNINDEX
 | Đối chiếu sự kiện | % thay đổi chỉ số trong phiên mỗi sự kiện của cổ phiếu, xu hướng và pha (tham khảo) của chỉ số ngày đó |
 | Pha Wyckoff của chỉ số | cùng bộ detector, **chỉ tham khảo** (ngưỡng chưa hiệu chỉnh cho chỉ số), không tính vào tin cậy |
 
-Điểm tin cậy thêm (2 yếu tố, mỗi yếu tố trong [−1, +1]): (1) chỉ số uptrend +1 / downtrend −1; (2) nhóm **sức mạnh tương đối**
+Điểm tin cậy thêm (2 yếu tố, mỗi yếu tố trong [−1, +1]): (1) chỉ số uptrend +1 **chỉ khi RS 60 phiên > +3%** (GT2, mặc định từ 03/11/2026; ngược lại 0) / downtrend −1; (2) nhóm **sức mạnh tương đối**
 = clamp(RS + phân kỳ, −1, +1), trong đó RS 60 phiên > +3% → +1, < −3% → −1, trong ±3% → 0 (đi ngang); phân kỳ đáy +1.
 Gộp nhóm để không chấm hai lần (cổ phiếu giữ đáy khi chỉ số tạo đáy mới cũng làm RS tăng; với HPG đáy "giữ được" chính là cặp Spring/Test).
 Mọi chuỗi do code sinh (điều kiện, lý do pha, bằng chứng) dùng định dạng VN: 27.360.105; 22,75; 1.699,62; 03/11/2026.
@@ -174,3 +204,53 @@ Prompt v3 thêm trường `market_assessment`. Lớp kiểm tra đọc số theo
   4. Spring / SOS / SC theo thuộc tính (độ sâu thủng, volume phiên thủng, phiên hồi, độ dài và chiều cao range, bối cảnh, xu hướng chỉ số, beta...).
   Đầu ra thêm: by_kind_beta.csv, by_kind_period.csv, by_factor.csv, breakdown_spring.csv, breakdown_sos.csv, breakdown_sc.csv.
 - Kết quả mốc (trước chẩn đoán): Project `claude/backtest-baseline-2026-11-03.md`.
+- **Bước 2 (v2, 03/11/2026)**: thang tin cậy v2, SC failed không vô hiệu, đổi nhãn bối cảnh, cảnh báo Spring xuyên sâu,
+  mức vô hiệu pha D `range_mid`; payload v4, prompt v4 (nhãn bối cảnh chỉ là đà giá; yếu tố 0 điểm không cộng tin cậy).
+  Cột `h_<mã>` trong signals.csv ghi yếu tố có mặt (kể cả 0 điểm). Kết quả: Project `claude/backtest-v2-2026-11-03.md`.
+- **Kiểm tra ngoài mẫu** (`wyckoff/backtest/oos.py`): `config/v1.yaml` tái hiện quy tắc v1 để so trên cùng dữ liệu;
+  `scripts/oos_eval.py` chấm theo tiêu chí chốt trước. VNMidCap: ĐẠT (Project `claude/oos-results-2026-11-03.md`).
+- **Giả thuyết** (kiểm tra trên VNSmallCap, Project `claude/oos-hypotheses-results-2026-11-03.md`):
+  GT1 `market.context_benchmark` (`config/h1.yaml`, bối cảnh theo VNSMALLCAP) – **không chấp nhận**, mặc định tắt;
+  GT2 `market.trend_up_requires_rs` (`config/h2.yaml`) – **chấp nhận, mặc định bật từ 03/11/2026**.
+  Tái lập v2 trước GT2: `config/v2_pre_gt2.yaml`; v1: `config/v1.yaml`. Chấm bằng `scripts/hypothesis_eval.py` (bootstrap theo mã ghép cặp).
+
+## Web dashboard
+
+```bash
+pip install -r requirements.txt
+python serve.py                    # API: http://127.0.0.1:8000/api/docs ; mã DEMO dùng dữ liệu tổng hợp
+python serve.py --no-llm           # agent trả lời theo mẫu, không gọi API
+
+cd web && npm install && npm run dev   # giao diện Next.js: http://localhost:3000 (cần serve.py đang chạy)
+npm run build && npm start             # bản production (Node >= 20.9)
+```
+
+**Giao diện Next.js** (`web/`, Next 16 App Router, React 19, Tailwind CSS 4, TypeScript):
+
+| Đường dẫn | Nội dung |
+|---|---|
+| `/` , `/co-phieu` | Chuyển tới mã mặc định (`NEXT_PUBLIC_DEFAULT_SYMBOL`, mặc định HPG) |
+| `/co-phieu/[symbol]` | Dashboard khung ngày; `?tf=1W` khung tuần. Mã viết thường hoặc `?tf=1D` / tf sai được chuyển về URL chuẩn |
+| mã sai định dạng | Trang 404 (`app/not-found.tsx`); mã không có dữ liệu / API lỗi: thông báo tại chỗ + Thử lại |
+
+Trang phân tích chạy trên server (gọi `WYCKOFF_API_URL`); `loading.tsx` hiện skeleton khi đổi mã / khung. Diễn giải agent,
+hỏi đáp và Phân tích lại chạy ở client qua `/api/*` (Next rewrite sang FastAPI, không cần CORS). Font IBM Plex tự host bằng
+`next/font`. Thành phần: `components/layout` (Header, Footer, trạng thái), `components/ui` (Card, Button, Skeleton),
+`components/dashboard` (PriceChart, PhaseCard, EventsCard, ScenarioCard, AskAgent...).
+Biểu đồ dùng TradingView Lightweight Charts: con lăn / pinch để zoom, kéo để xem ngày cũ, nút 3T–Tất cả, phím mũi tên và +/−; API trả toàn bộ lịch sử đã phân tích (`bars`) kèm khung nhìn mặc định (`view_from`) và các đoạn pha (`phase_segments`), vẽ thành dải nền theo pha như báo cáo HTML. Kiểm tra: `npm run lint`, `npm run typecheck`, `npm run build`.
+
+Một màn hình cho một mã: biểu đồ nến + vùng giao dịch + nhãn sự kiện, pha hiện tại và các yếu tố tin cậy, bằng chứng
+từng sự kiện, kịch bản xác nhận / vô hiệu, mục tiêu Nhân–Quả, hỏi agent. Khung **Ngày** là khung gốc; **Tuần** gộp từ
+nến ngày (chỉ tham khảo); 15 phút / Giờ chưa hỗ trợ.
+
+- API (`/api/docs`): `GET /api/analysis/{mã}?tf=1D|1W`, `GET /api/explanation/{mã}`, `POST /api/ask`. Phân tích được cache
+  5 phút trong bộ nhớ (`WYCKOFF_TTL_S`); "Phân tích lại" bỏ cache và cập nhật dữ liệu tăng dần.
+- **Hỏi agent** (`wyckoff/agent/ask.py`): cùng nguyên tắc diễn giải – chỉ dùng số trong payload (số người dùng tự gõ trong
+  câu hỏi được phép nhắc lại), không tên trường kỹ thuật, `event_ids` phải tồn tại; sai -> thử lại 1 lần -> trả lời theo mẫu.
+- **Mục tiêu P&F** (`wyckoff/pnf.py`, khóa `pnf` trong YAML): P&F theo close, ô = 0,5 ATR lúc range xác nhận (làm tròn lên
+  theo tick), đảo chiều 3 ô; đếm số cột từ đầu range đến LPS (chưa có LPS: đến trước SOS; chưa có SOS: đến phiên cuối, **tạm tính**).
+  Thận trọng = đáy thấp nhất cấu trúc + cột × ô × 3; tích cực = đường đếm (đáy LPS, chưa có thì support) + cột × ô × 3. Chỉ tính ở pha C, D, E.
+- Đặc tả giao diện cho dev: `docs/handoff-dashboard.md`. Biến môi trường: `WYCKOFF_CONFIG`, `WYCKOFF_CACHE_DIR`, `WYCKOFF_OUT_DIR`,
+  `WYCKOFF_MODEL`, `WYCKOFF_NO_LLM`, `WYCKOFF_NO_MARKET`, `WYCKOFF_DEFAULT_SYMBOL`.
+- Chưa có xác thực / giới hạn tần suất: mặc định chỉ nghe `127.0.0.1`; cần bổ sung trước khi mở ra Internet.
+- **Giả thuyết H4** (`docs/h4-preregistration.md`, 308 mã): H4a SC hai phiên (`config/h4a.yaml`) và H4b range neo theo SC–AR (`config/h4b.yaml`) – **không chấp nhận**, mặc định tắt. H4b trung tính với thang tin cậy (chênh lệch cao − thấp +1,56 so với +1,55; P = 0,53). Chạy lại: `scripts/parallel_study.py`, `scripts/h4_eval.py`.
