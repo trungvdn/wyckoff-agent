@@ -77,7 +77,9 @@ def stage_text(cs: dict[str, Any]) -> str:
     stage = f" ({cs['stage']})" if cs["stage"] else ""
     cand = f", giả thuyết {' hoặc '.join(cs['candidates'])}" if cs["candidates"] else ""
     strength = f" {cs['strength']['headline']}." if cs.get("strength") else ""
-    return f"Giai đoạn: {cs['structure_type']}{stage}{cand}.{strength}"
+    dist = cs.get("distribution_phase") or {}
+    dist_txt = f" Theo sơ đồ phân phối: pha {dist['phase']}." if dist.get("phase") and dist["phase"] != "invalid" else ""
+    return f"Giai đoạn: {cs['structure_type']}{stage}{cand}.{strength}{dist_txt}"
 
 
 def template_explanation(payload: dict[str, Any]) -> dict[str, Any]:

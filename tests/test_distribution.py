@@ -54,7 +54,7 @@ def flip_ranges(ranges: list[TradingRange], level: float) -> list[TradingRange]:
     return [dataclasses.replace(r, support=level - r.resistance, resistance=level - r.support) for r in ranges]
 
 
-MIRROR_CFG = DistributionConfig(bc_exclude_ceiling_locked=False)
+MIRROR_CFG = DistributionConfig(bc_exclude_ceiling_locked=False, sow_floor_chain_min_days=99)
 LEVEL = 800.0
 SEEDS = range(1, 13)
 

@@ -52,6 +52,8 @@ distribution:                # BC, AR(d), ST(d), SOW, LPSY: chỉ ghi nhận, kh
   sow_min_spread_atr: 1.2
   sow_min_vol_ratio: 1.5
   sow_max_close_pos: 0.3
+  sow_floor_chain_min_days: 2   # dạng VN: >= 2 phiên khóa sàn trong 3 phiên
+  sow_floor_chain_window: 3
   lpsy_window: 20
   lpsy_hold_below_sup_atr: 1.0
   lpsy_min_rally_atr: 0.5

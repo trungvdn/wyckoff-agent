@@ -82,7 +82,10 @@ def stage_view(current: dict[str, Any], history: list[dict[str, Any]]) -> dict[s
     in_range = current["range_id"] is not None
     view = "range" if in_range else "trend" if current["stage"] in TREND_STAGES else "transition"
     title = {"range": " hoặc ".join(current["candidates"]), "trend": current["stage"], "transition": "Chưa có xu hướng rõ"}[view]
-    return {**current, "view": view, "title": title,
+    dist = current.get("distribution_phase")
+    dist_view = None if not dist else {**phase_view(dist["phase"]), "since": dist["since"], "reason": dist["reason"],
+                                       "events": [e["kind"] for e in dist["events"]]}
+    return {**current, "view": view, "title": title, "distribution_phase": dist_view,
             "last_resolved": None if last is None else {
                 "range_id": last["range_id"], "label": last["structure_type"] or last["stage"], "date": last["resolved_date"]}}
 

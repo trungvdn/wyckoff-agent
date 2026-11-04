@@ -13,9 +13,9 @@ const CONFIDENCE_STYLE: Record<string, string> = {
 const STEP_BAR: Record<StepStatus, string> = { done: "before:bg-pos-dim", current: "before:bg-pos", pending: "before:bg-pending" };
 const STEP_SR: Record<StepStatus, string> = { done: " (đã qua)", current: "", pending: " (chưa tới)" };
 
-function Steps({ steps }: { steps: PhaseInfo["steps"] }) {
+function Steps({ steps, label }: { steps: PhaseInfo["steps"]; label: string }) {
   return (
-    <ol aria-label="Tiến trình pha A đến E" className="mt-1 grid list-none grid-cols-5 gap-1 p-0">
+    <ol aria-label={label} className="mt-1 grid list-none grid-cols-5 gap-1 p-0">
       {steps.map((s) => (
         <li
           key={s.id}
@@ -56,7 +56,24 @@ function Factors({ factors }: { factors: Confidence["factors"] }) {
   );
 }
 
-/** Trong range: giả thuyết giai đoạn và pha hiện tại. */
+/** Pha theo sơ đồ phân phối: chỉ ghi nhận, chưa có điểm tin cậy và mức giá. */
+function DistributionPhase({ phase: d }: { phase: NonNullable<StageInfo["distribution_phase"]> }) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-line pt-3">
+      <div>
+        <p className="m-0 text-[13px] text-muted">Nếu là phân phối</p>
+        <p className="m-0 text-[22px] leading-tight font-bold tracking-tight">{d.title}</p>
+      </div>
+      <p className="m-0 leading-relaxed text-fg-2">
+        {d.reason}.{d.since ? ` Từ ${fmtDate(d.since)}.` : ""}
+      </p>
+      <Steps steps={d.steps} label="Tiến trình pha phân phối A đến E" />
+      <p className="m-0 text-[13px] text-muted">Chỉ ghi nhận, chưa có điểm tin cậy và mức giá.</p>
+    </div>
+  );
+}
+
+/** Trong range: giả thuyết giai đoạn và pha theo cả hai sơ đồ. */
 function RangeBody({ stage, phase: p, confidence: c }: { stage: StageInfo; phase: PhaseInfo; confidence: Confidence }) {
   const area = p.support != null && p.resistance != null ? ` Vùng ${fmtPrice(p.support)} – ${fmtPrice(p.resistance)}.` : "";
   return (
@@ -66,7 +83,10 @@ function RangeBody({ stage, phase: p, confidence: c }: { stage: StageInfo; phase
       </p>
       <div className="flex flex-col gap-3 border-t border-line pt-3">
         <div className="flex items-end justify-between gap-3">
-          <p className="m-0 flex-1 text-[22px] leading-tight font-bold tracking-tight">{p.title}</p>
+          <div className="flex-1">
+            <p className="m-0 text-[13px] text-muted">Nếu là tích lũy</p>
+            <p className="m-0 text-[22px] leading-tight font-bold tracking-tight">{p.title}</p>
+          </div>
           <div className="flex flex-col items-end gap-1">
             <span className={cx(PILL, CONFIDENCE_STYLE[c.level] ?? "border-line-strong text-muted")}>
               {c.score == null ? "Tin cậy: không áp dụng" : `Tin cậy ${c.level}`}
@@ -83,10 +103,10 @@ function RangeBody({ stage, phase: p, confidence: c }: { stage: StageInfo; phase
           {p.reason}.{p.since ? ` Từ ${fmtDate(p.since)}.` : ""}
           {area}
         </p>
-        <Steps steps={p.steps} />
-        <p className="m-0 text-[13px] text-muted">Pha và điểm tin cậy tính theo sơ đồ tích lũy; sơ đồ pha phân phối chưa có.</p>
+        <Steps steps={p.steps} label="Tiến trình pha tích lũy A đến E" />
         <Factors factors={c.factors} />
       </div>
+      {stage.distribution_phase && <DistributionPhase phase={stage.distribution_phase} />}
     </>
   );
 }

@@ -20,7 +20,7 @@ from wyckoff.pipeline import AnalysisResult
 from wyckoff.stages import MARKDOWN
 from wyckoff.strength import STRONG, WEAK, TrendStrength
 
-PAYLOAD_VERSION = "7"   # v7 (04/11/2026): current_stage.strength (sức mạnh cung cầu trong Markup / Markdown)
+PAYLOAD_VERSION = "8"   # v8 (04/11/2026): current_stage.distribution_phase (pha theo sơ đồ phân phối khi đang trong range)
 
 
 def _r(x: Any, d: int = 2) -> Any:
@@ -204,6 +204,7 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
             "reason": stage.reason, "prior_stage": stage.prior_stage, "candidates": list(stage.candidates),
             "range_id": stage.range_id,
             "strength": None if strength is None else strength.to_dict(),
+            "distribution_phase": result.current_distribution_phase().to_dict() if stage.range_id is not None else None,
         },
         "stage_history": [
             {"range_id": r.range_id, "prior_stage": r.prior_stage, "stage": r.stage, "structure_type": r.structure_type,

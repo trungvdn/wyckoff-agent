@@ -286,6 +286,8 @@ class DistributionConfig:
     sow_min_spread_atr: float = 1.2
     sow_min_vol_ratio: float = 1.5
     sow_max_close_pos: float = 0.3
+    sow_floor_chain_min_days: int = 2  # dạng VN: >= 2 phiên khóa sàn ...
+    sow_floor_chain_window: int = 3    # ... trong 3 phiên, close dưới support: không xét volume, biên độ (bị khóa sàn chặn)
     # LPSY
     lpsy_window: int = 20
     lpsy_hold_below_sup_atr: float = 1.0  # high <= support + 1 ATR

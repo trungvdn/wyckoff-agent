@@ -117,6 +117,7 @@ def main() -> None:
     result.phases_frame().to_csv(out / f"{symbol}_phases.csv", index=False)
     result.stages_frame().to_csv(out / f"{symbol}_stages.csv", index=False)
     result.distribution_frame().to_csv(out / f"{symbol}_distribution.csv", index=False)
+    result.distribution_phases_frame().to_csv(out / f"{symbol}_distribution_phases.csv", index=False)
     (out / f"{symbol}_current_phase.json").write_text(
         json.dumps(result.current().to_dict(), ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )

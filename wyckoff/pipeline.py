@@ -16,6 +16,7 @@ from wyckoff.detectors.trading_range import detect_trading_ranges
 from wyckoff.indicators.core import add_indicators
 from wyckoff.indicators.limits import add_limit_flags
 from wyckoff.phases import CurrentPhase, PhaseResult, classify_phases, current_phase
+from wyckoff.phases_distribution import CurrentDistributionPhase, classify_distribution_phases, current_distribution_phase
 from wyckoff.stages import MARKDOWN, MARKUP, CurrentStage, StageResult, classify_stages, current_stage
 from wyckoff.strength import TrendStrength, trend_strength
 
@@ -31,6 +32,7 @@ class AnalysisResult:
     cfg: Config
     candidates: list[Event] = field(default_factory=list)   # chưa/không xác nhận – không dùng cho pha/tin cậy
     distribution: list[Event] = field(default_factory=list) # BC, AR(d), ST(d), SOW, LPSY: chỉ ghi nhận, không dùng cho pha/tin cậy
+    distribution_phases: PhaseResult | None = None          # pha theo sơ đồ phân phối, chạy song song, chỉ ghi nhận
 
     def structure_of(self) -> dict[str, int]:
         """event_id -> structure_id (cấu trúc của state machine pha)."""
@@ -64,6 +66,12 @@ class AnalysisResult:
 
     def current_stage(self) -> CurrentStage:
         return current_stage(self.stages)
+
+    def current_distribution_phase(self) -> CurrentDistributionPhase:
+        return current_distribution_phase(self.distribution_phases)
+
+    def distribution_phases_frame(self) -> pd.DataFrame:
+        return pd.DataFrame([s.__dict__ for s in self.distribution_phases.segments])
 
     def trend_strength(self) -> TrendStrength | None:
         """Sức mạnh cung cầu tại phiên cuối; None khi không ở Markup / Markdown."""
@@ -99,6 +107,11 @@ class AnalysisResult:
             cfg=self.cfg,
             candidates=[e for e in self.candidates if e.date >= ts],
             distribution=[e for e in self.distribution if e.date >= ts],
+            distribution_phases=PhaseResult(
+                series=self.distribution_phases.series.loc[ts:],
+                segments=[g for g in self.distribution_phases.segments if g.end_date >= ts],
+                structures=self.distribution_phases.structures,
+            ),
         )
 
 
@@ -135,7 +148,8 @@ def analyze(ohlcv: pd.DataFrame, cfg: Config | None = None) -> AnalysisResult:
         df, detect_distribution(df, ranges, cfg.distribution, dec, cfg.data.price_limit, cfg.data.limit_tolerance), ranges, cfg
     )
     return AnalysisResult(df=df, swings=swings, ranges=ranges, events=events, phases=phases, stages=stages, cfg=cfg,
-                          candidates=candidates, distribution=distribution)
+                          candidates=candidates, distribution=distribution,
+                          distribution_phases=classify_distribution_phases(df, ranges, distribution, events, cfg.phase))
 
 
 __all__ = ["AnalysisResult", "analyze", "EventType"]

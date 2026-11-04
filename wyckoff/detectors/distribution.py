@@ -200,28 +200,41 @@ def detect_sow(df: pd.DataFrame, ranges: list[TradingRange], cfg: DistributionCo
                decimals: int = 2) -> list[Event]:
     """SOW: trong range đã xác nhận (hoặc trong chuỗi phiên đang phá range), nến giảm close < open,
     close < support - sow_min_breakdown_atr x ATR, biên độ > sow_min_spread_atr x ATR,
-    volume > sow_min_vol_ratio x TB20, close_pos <= sow_max_close_pos. Xác nhận ngay tại phiên đó."""
+    volume > sow_min_vol_ratio x TB20, close_pos <= sow_max_close_pos. Xác nhận ngay tại phiên đó.
+
+    Dạng chuỗi khóa sàn (đặc thù VN, volume và biên độ bị khóa sàn chặn): phiên khóa sàn đầu tiên đạt đủ
+    sow_floor_chain_min_days phiên khóa sàn trong `sow_floor_chain_window` phiên, close < support - sow_min_breakdown_atr x ATR.
+    Một phiên khóa sàn đơn lẻ không tự động là SOW."""
     cfg = cfg or DistributionConfig()
     r = _rounded(df, decimals)
     last = len(df) - 1
     events: list[Event] = []
+    if "floor_locked" in df.columns:
+        locked = df["floor_locked"].astype(bool)
+        reached = locked & (locked.astype(int).rolling(cfg.sow_floor_chain_window, min_periods=1).sum() >= cfg.sow_floor_chain_min_days)
+        chain = reached & ~reached.shift(1, fill_value=False)
+    else:
+        chain = pd.Series(False, index=df.index)
     for rng in ranges:
         lo = rng.confirmed_idx + 1
         hi = rng.end_confirmed_idx if rng.end_confirmed_idx is not None else last
         if lo > hi:
             continue
         seg, rs = df.iloc[lo:hi + 1], r.iloc[lo:hi + 1]
-        cond = (
-            (seg["close"] < seg["open"])
-            & (seg["close"] < rng.support - cfg.sow_min_breakdown_atr * seg["atr_ref"])
+        below = (seg["close"] < rng.support - cfg.sow_min_breakdown_atr * seg["atr_ref"]).fillna(False)
+        wide = (
+            below
+            & (seg["close"] < seg["open"])
             & (rs["spread_atr"] > cfg.sow_min_spread_atr)
             & (rs["vol_ratio"] > cfg.sow_min_vol_ratio)
             & (rs["close_pos"] <= cfg.sow_max_close_pos)
         ).fillna(False)
-        for k in np.flatnonzero(cond.to_numpy()):
+        floor_form = below & chain.iloc[lo:hi + 1]
+        for k in np.flatnonzero((wide | floor_form).to_numpy()):
             i = lo + int(k)
             details = {"support": round(rng.support, 4),
-                       "breakdown_atr": round(float((rng.support - df["close"].iloc[i]) / df["atr_ref"].iloc[i]), 3)}
+                       "breakdown_atr": round(float((rng.support - df["close"].iloc[i]) / df["atr_ref"].iloc[i]), 3),
+                       "form": "wide_spread" if wide.iloc[int(k)] else "floor_chain"}
             events.append(_make_event(df, EventType.SOW, i, i, rng.range_id, details))
     return sorted(events, key=lambda e: e.idx)
 

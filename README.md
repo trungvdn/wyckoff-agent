@@ -32,6 +32,7 @@ wyckoff/data/              fetcher.py (vnstock, chuẩn hóa, kiểm tra), cache
 wyckoff/indicators/core.py ATR Wilder, TB volume, spread, close_pos, SMA
 wyckoff/detectors/         swings.py, trading_range.py, events.py (SC/Spring/SOS), structure.py (PS/AR/ST/LPS/UTAD), distribution.py (BC/AR(d)/ST(d)/SOW/LPSY, chỉ ghi nhận), lifecycle.py (vòng đời event), models.py
 wyckoff/phases.py          state machine pha A–E, current_phase()
+wyckoff/phases_distribution.py  pha A–E theo sơ đồ phân phối, chạy song song, chỉ ghi nhận
 wyckoff/stages.py          giai đoạn và loại cấu trúc (chỉ ghi nhận), current_stage()
 wyckoff/market.py          bối cảnh thị trường: xu hướng chỉ số, RS, phân kỳ đáy, đối chiếu sự kiện
 wyckoff/charts/plot.py     plotly: nến + volume + range + sự kiện
@@ -135,7 +136,7 @@ Ba tín hiệu, mỗi tín hiệu −1 / 0 / +1; tổng ≥ 2 mạnh, ≤ −1 y
 
 ## Sự kiện phía phân phối (`wyckoff/detectors/distribution.py`, chỉ ghi nhận)
 
-Nằm trong `result.distribution`, xuất ra `<MÃ>_distribution.csv`. **Không** vào `result.events`, payload, dashboard, pha, tin cậy hay backtest (khóa `distribution` trong YAML). Chưa có sơ đồ pha phân phối (Bước 3).
+Nằm trong `result.distribution`, xuất ra `<MÃ>_distribution.csv`. **Không** vào `result.events`, pha tích lũy, tin cậy hay backtest (khóa `distribution` trong YAML).
 
 | Sự kiện | Điều kiện (đối xứng phía tích lũy, trừ chỗ ghi riêng) |
 |---|---|
@@ -143,14 +144,26 @@ Nằm trong `result.distribution`, xuất ra `<MÃ>_distribution.csv`. **Không*
 | **BC failed** | Trong 30 phiên, trước AR(d): close > đỉnh BC + 0,5 ATR |
 | **AR(d)** | Đáy pivot (3 phiên mỗi bên) đầu tiên trong 30 phiên sau BC, low ≤ đỉnh BC − 3 ATR |
 | **ST(d)** | Sau AR(d), trong 60 phiên: high ∈ [đỉnh BC − 1 ATR, đỉnh BC + 0,5 ATR], volume < 0,7× BC, biên độ < BC, close ≤ đỉnh BC; cách nhau ≥ 10 phiên |
-| **SOW** | Trong range: nến giảm; close < support − 0,2 ATR; spread_atr > 1,2; vol_ratio > 1,5; close_pos ≤ 0,3 |
+| **SOW** | Trong range: nến giảm; close < support − 0,2 ATR; spread_atr > 1,2; vol_ratio > 1,5; close_pos ≤ 0,3. **Dạng chuỗi khóa sàn**: phiên khóa sàn đầu tiên đạt ≥ 2 phiên khóa sàn trong 3 phiên, close < support − 0,2 ATR, không xét volume và biên độ; một phiên khóa sàn đơn lẻ không tự động là SOW |
 | **LPSY** | Sau SOW, trong 20 phiên: high ≤ support + 1 ATR, high ≥ close thấp nhất từ SOW + 0,5 ATR, vol_ratio < 1, spread_atr < 1; xác nhận khi trong 3 phiên sau có close < low phiên đó |
 
 Vô hiệu sau xác nhận (trong 60 phiên): BC ← BC failed; SOW ← close > giữa range; LPSY ← close > đỉnh LPSY + 0,5 ATR.
 `tests/test_distribution.py` kiểm tra đối xứng bằng cách lật giá. Khác biệt riêng của BC chọn theo số đếm, không theo lợi suất.
 
-**Khảo sát cấu trúc (311 mã, từ 2018)**: BC 1.656 (SC 1.410), BC failed 42% (SC failed 39%), AR(d) 1.012, ST(d) 1.052, SOW 1.351 (SOS 3.996), LPSY 931. Lệch rõ nhất: chỉ 31% range thoát xuống có SOW, trong khi 71% range thoát lên có SOS,
-một phần do có 1.398 phiên khóa sàn dưới support không đạt điều kiện SOW (thanh khoản cạn, biên độ bị chặn). Chưa nới điều kiện vì phiên khóa trần cũng không tự động là SOS.
+**Khảo sát cấu trúc (311 mã, từ 2018)**: BC 1.656 (SC 1.410), BC failed 42% (SC failed 39%), AR(d) 1.012, ST(d) 1.052, SOW 1.711 gồm 1.351 biên độ rộng và 360 chuỗi khóa sàn (SOS 3.996). Vẫn lệch: 39% range thoát xuống có SOW (31% trước khi thêm dạng chuỗi khóa sàn), trong khi 71% range thoát lên có SOS.
+
+**Pha theo sơ đồ phân phối** (`wyckoff/phases_distribution.py`, `result.distribution_phases`, `<MÃ>_distribution_phases.csv`): state machine causal chạy **song song** với pha tích lũy, vì trong range chưa biết giả thuyết nào đúng. Chỉ ghi nhận, không có điểm tin cậy và mức giá.
+
+| Pha | Mở khi | Chuyển tiếp |
+|---|---|---|
+| A | BC xác nhận | → B khi có ST(d) |
+| B | ST(d), hoặc range xác nhận không có BC | → C khi UT / UTAD; → D khi SOW |
+| C | UT / UTAD | → D khi SOW |
+| D | SOW (LPSY được ghi nhận) | → E khi range thoát xuống |
+| E | Range thoát xuống | — |
+| invalid | Range thoát lên; pha C có close > đỉnh upthrust + 0,5 ATR | cấu trúc mới khi có BC hoặc range mới |
+
+Khác phía tích lũy: Spring không vô hiệu cấu trúc phân phối, không có "SOS reclaim" đối xứng. Payload v8 thêm `current_stage.distribution_phase` khi đang trong range; prompt v7. Dashboard hiện cả hai sơ đồ trong thẻ `StagePhaseCard` khi đang trong range.
 
 ## Chống look-ahead
 - Chỉ báo causal; swing có độ trễ xác nhận; range xử lý online; Spring xác nhận ở phiên quay lại.

@@ -76,6 +76,14 @@ export interface StageInfo {
   stage: string | null; // Markup | Markdown; null khi trong range hoặc chưa có xu hướng
   structure_type: string;
   strength: TrendStrength | null;
+  distribution_phase: {
+    phase: string | null;
+    title: string;
+    steps: { id: string; status: StepStatus }[];
+    since: string | null;
+    reason: string;
+    events: string[];
+  } | null; // pha theo sơ đồ phân phối khi đang trong range, chỉ ghi nhận
   title: string;
   since: string | null;
   reason: string;
