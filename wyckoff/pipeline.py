@@ -7,7 +7,8 @@ import pandas as pd
 
 from wyckoff.config import Config
 from wyckoff.detectors.events import detect_selling_climax, detect_sos, detect_sos_reclaim, detect_spring
-from wyckoff.detectors.lifecycle import annotate, snapshot
+from wyckoff.detectors.distribution import detect_distribution
+from wyckoff.detectors.lifecycle import annotate, annotate_distribution, snapshot
 from wyckoff.detectors.models import Event, EventStatus, EventType, Swing, TradingRange
 from wyckoff.detectors.structure import detect_ar, detect_lps, detect_ps, detect_st, detect_utad, sc_ar_anchors
 from wyckoff.detectors.swings import find_swings
@@ -15,6 +16,9 @@ from wyckoff.detectors.trading_range import detect_trading_ranges
 from wyckoff.indicators.core import add_indicators
 from wyckoff.indicators.limits import add_limit_flags
 from wyckoff.phases import CurrentPhase, PhaseResult, classify_phases, current_phase
+from wyckoff.phases_distribution import CurrentDistributionPhase, classify_distribution_phases, current_distribution_phase
+from wyckoff.stages import MARKDOWN, MARKUP, CurrentStage, StageResult, classify_stages, current_stage
+from wyckoff.strength import TrendStrength, trend_strength
 
 
 @dataclass
@@ -24,8 +28,11 @@ class AnalysisResult:
     ranges: list[TradingRange]
     events: list[Event]
     phases: PhaseResult
+    stages: StageResult
     cfg: Config
     candidates: list[Event] = field(default_factory=list)   # chưa/không xác nhận – không dùng cho pha/tin cậy
+    distribution: list[Event] = field(default_factory=list) # BC, AR(d), ST(d), SOW, LPSY: chỉ ghi nhận, không dùng cho pha/tin cậy
+    distribution_phases: PhaseResult | None = None          # pha theo sơ đồ phân phối, chạy song song, chỉ ghi nhận
 
     def structure_of(self) -> dict[str, int]:
         """event_id -> structure_id (cấu trúc của state machine pha)."""
@@ -42,14 +49,38 @@ class AnalysisResult:
         i = len(self.df) - 1 if t is None else t if isinstance(t, int) else int(self.df.index.get_loc(pd.Timestamp(t)))
         return snapshot(self.events, self.candidates, i)
 
+    def distribution_frame(self) -> pd.DataFrame:
+        return pd.DataFrame([e.to_dict() for e in self.distribution])
+
     def ranges_frame(self) -> pd.DataFrame:
         return pd.DataFrame([r.__dict__ for r in self.ranges])
 
     def phases_frame(self) -> pd.DataFrame:
         return pd.DataFrame([s.__dict__ for s in self.phases.segments])
 
+    def stages_frame(self) -> pd.DataFrame:
+        return pd.DataFrame([s.__dict__ for s in self.stages.segments])
+
     def current(self) -> CurrentPhase:
         return current_phase(self.df, self.phases, self.cfg)
+
+    def current_stage(self) -> CurrentStage:
+        return current_stage(self.stages)
+
+    def current_distribution_phase(self) -> CurrentDistributionPhase:
+        return current_distribution_phase(self.distribution_phases)
+
+    def distribution_phases_frame(self) -> pd.DataFrame:
+        return pd.DataFrame([s.__dict__ for s in self.distribution_phases.segments])
+
+    def trend_strength(self) -> TrendStrength | None:
+        """Sức mạnh cung cầu tại phiên cuối; None khi không ở Markup / Markdown."""
+        st = self.current_stage()
+        if st.stage not in (MARKUP, MARKDOWN) or st.since is None:
+            return None
+        start = int(self.df.index.searchsorted(st.since))
+        return trend_strength(self.df, self.swings, start, "up" if st.stage == MARKUP else "down", self.cfg.strength,
+                              self.cfg.indicators.sma_period)
 
     def since(self, start: str | pd.Timestamp) -> "AnalysisResult":
         """Chỉ giữ phần từ `start` để báo cáo/vẽ. Phân tích đã chạy trên toàn bộ dữ liệu
@@ -60,14 +91,27 @@ class AnalysisResult:
             segments=[g for g in self.phases.segments if g.end_date >= ts],
             structures=self.phases.structures,
         )
+        kept = {r.range_id for r in self.ranges if r.end_date >= ts}
+        st = StageResult(
+            series=self.stages.series.loc[ts:],
+            segments=[g for g in self.stages.segments if g.end_date >= ts],
+            ranges=[r for r in self.stages.ranges if r.range_id in kept],
+        )
         return AnalysisResult(
             df=self.df.loc[ts:],
             swings=[s for s in self.swings if s.date >= ts],
             ranges=[r for r in self.ranges if r.end_date >= ts],
             events=[e for e in self.events if e.date >= ts],
             phases=ph,
+            stages=st,
             cfg=self.cfg,
             candidates=[e for e in self.candidates if e.date >= ts],
+            distribution=[e for e in self.distribution if e.date >= ts],
+            distribution_phases=PhaseResult(
+                series=self.distribution_phases.series.loc[ts:],
+                segments=[g for g in self.distribution_phases.segments if g.end_date >= ts],
+                structures=self.distribution_phases.structures,
+            ),
         )
 
 
@@ -94,13 +138,18 @@ def analyze(ohlcv: pd.DataFrame, cfg: Config | None = None) -> AnalysisResult:
         + detect_ps(df, sc_events, cfg.ps, decimals=dec)
         + detect_st(df, sc_events, ar, cfg.st)
         + detect_lps(df, ranges, sos, cfg.lps, decimals=dec)
-        + detect_utad(df, ranges, cfg.utad, exchange=cfg.data.exchange, decimals=dec)
+        + detect_utad(df, ranges, cfg.utad, exchange=cfg.data.exchange, decimals=dec, candidates=candidates)
     )
     events.sort(key=lambda e: (e.idx, e.kind.value))
     events, candidates = annotate(df, events, candidates, ranges, cfg)
     phases = classify_phases(df, ranges, events, cfg.phase, cfg.ranges)
-    return AnalysisResult(df=df, swings=swings, ranges=ranges, events=events, phases=phases, cfg=cfg,
-                          candidates=candidates)
+    stages = classify_stages(df, ranges, cfg.stage, cfg.indicators.sma_period)
+    distribution = annotate_distribution(
+        df, detect_distribution(df, ranges, cfg.distribution, dec, cfg.data.price_limit, cfg.data.limit_tolerance), ranges, cfg
+    )
+    return AnalysisResult(df=df, swings=swings, ranges=ranges, events=events, phases=phases, stages=stages, cfg=cfg,
+                          candidates=candidates, distribution=distribution,
+                          distribution_phases=classify_distribution_phases(df, ranges, distribution, events, cfg.phase))
 
 
 __all__ = ["AnalysisResult", "analyze", "EventType"]

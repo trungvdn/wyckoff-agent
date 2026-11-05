@@ -39,6 +39,14 @@ class EventType(str, Enum):
     ST = "ST"
     LPS = "LPS"
     UTAD = "UTAD"
+    UT = "UT"
+    # Phía phân phối (wyckoff/detectors/distribution.py): chỉ ghi nhận, không vào `result.events`
+    BC = "BC"
+    BC_FAILED = "BC failed"
+    AR_D = "AR(d)"
+    ST_D = "ST(d)"
+    SOW = "SOW"
+    LPSY = "LPSY"
 
 
 SPRING_TYPE_LABEL = {"low_volume": "volume thấp", "shakeout": "shakeout"}

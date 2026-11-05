@@ -17,8 +17,10 @@ from wyckoff.detectors.models import CTX_AFTER_DECLINE, CTX_AFTER_RISE, SPRING_T
 from wyckoff.fmt import vn_g, vn_num, vn_ts
 from wyckoff.phases import CurrentPhase
 from wyckoff.pipeline import AnalysisResult
+from wyckoff.stages import MARKDOWN
+from wyckoff.strength import STRONG, WEAK, TrendStrength
 
-PAYLOAD_VERSION = "5"   # v5 (04/11/2026): evidence_events có uid / status / status_reason / related (vòng đời event)
+PAYLOAD_VERSION = "8"   # v8 (04/11/2026): current_stage.distribution_phase (pha theo sơ đồ phân phối khi đang trong range)
 
 
 def _r(x: Any, d: int = 2) -> Any:
@@ -49,9 +51,19 @@ def _note(pts: int, v1: int) -> str:
     return "" if pts == v1 else f" (v1: {'+' if v1 > 0 else ''}{v1}, hiệu chỉnh theo backtest)"
 
 
+def _strength_points(s: TrendStrength | None) -> int:
+    """H7a: cầu mạnh +1, cầu yếu đi -1, cung mạnh -1; còn lại 0 (cung yếu đi chưa phải cầu đã quay lại)."""
+    if s is None:
+        return 0
+    if s.side == "demand":
+        return {STRONG: 1, WEAK: -1}.get(s.level, 0)
+    return -1 if s.level == STRONG else 0
+
+
 def confidence(cur: CurrentPhase, events: list[Event], range_context: str | None,
                market_factors: list[dict[str, Any]] | None = None,
-               cfg: ConfidenceConfig | None = None) -> dict[str, Any]:
+               cfg: ConfidenceConfig | None = None, strength: TrendStrength | None = None,
+               prior_stage: str | None = None) -> dict[str, Any]:
     """Điểm tin cậy theo quy tắc (không phải xác suất). <= 0 thấp, 1-2 trung bình, >= 3 cao.
     Trọng số từng yếu tố trong `ConfidenceConfig` (v2). `market_factors`: xu hướng chỉ số ±1,
     sức mạnh tương đối (RS + phân kỳ) tối đa ±1. Yếu tố 0 điểm vẫn được ghi để minh bạch."""
@@ -85,8 +97,14 @@ def confidence(cur: CurrentPhase, events: list[Event], range_context: str | None
     if EventType.LPS in kinds:
         f.append(Factor("Có LPS giữ trên resistance cũ", cfg.lps, "điều chỉnh volume thấp", "lps"))
     ctx_pts = {CTX_AFTER_DECLINE: cfg.after_decline, CTX_AFTER_RISE: cfg.after_rise}.get(range_context or "", 0)
-    f.append(Factor(f"Bối cảnh range: {range_context or 'không có range'}", ctx_pts,
+    f.append(Factor(f"Bối cảnh range: {range_context or 'không có range'}", 0 if cfg.prior_stage else ctx_pts,
                     "đà giá 120 phiên trước range (không phải tích lũy / phân phối theo Wyckoff)", "rangectx"))
+    if cfg.prior_stage:
+        f.append(Factor(f"Xu hướng trước range: {prior_stage or 'không rõ'}", cfg.after_decline if prior_stage == MARKDOWN else 0,
+                        "theo giai đoạn trước khi range hình thành", "priorstage"))
+    if cfg.stage_strength:
+        f.append(Factor(f"Sức mạnh cung cầu: {strength.headline if strength else 'không ở Markup / Markdown'}",
+                        _strength_points(strength), "khối lượng, đỉnh đáy, nhịp điều chỉnh", "stagestrength"))
     for w in cur.warnings:
         pts = -2 if ("thất bại" in w or "quay lại" in w) else -1
         f.append(Factor("Cảnh báo", pts, w, "warning"))
@@ -163,6 +181,10 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
     ]
     segs = result.phases.segments[-6:]
     recent_ranges = [r for r in result.ranges][-3:]
+    stage = result.current_stage()
+    strength = result.trend_strength()
+    prior_stage = next((r.prior_stage for r in result.stages.ranges if r.range_id == cur.range_id), None)
+    resolved = [r for r in result.stages.ranges if r.resolved_idx is not None][-6:]
     payload: dict[str, Any] = {
         "payload_version": PAYLOAD_VERSION,
         "symbol": symbol,
@@ -177,9 +199,22 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
             "range_confirmed": _date(rng.confirmed_date) if rng is not None else None,
             "support": _r(cur.support), "resistance": _r(cur.resistance), "atr": _r(cur.atr),
         },
+        "current_stage": {
+            "stage": stage.stage, "structure_type": stage.structure_type, "since": _date(stage.since),
+            "reason": stage.reason, "prior_stage": stage.prior_stage, "candidates": list(stage.candidates),
+            "range_id": stage.range_id,
+            "strength": None if strength is None else strength.to_dict(),
+            "distribution_phase": result.current_distribution_phase().to_dict() if stage.range_id is not None else None,
+        },
+        "stage_history": [
+            {"range_id": r.range_id, "prior_stage": r.prior_stage, "stage": r.stage, "structure_type": r.structure_type,
+             "exit": r.exit_direction, "resolved_date": _date(r.resolved_date)}
+            for r in resolved
+        ],
         "levels": levels,
         "confidence": confidence(cur, struct_events, cur.range_context,
-                                 market_confidence_factors(market, cfg.market) if market else None, cfg.confidence),
+                                 market_confidence_factors(market, cfg.market) if market else None, cfg.confidence,
+                                 strength=strength, prior_stage=prior_stage),
         "market": market,
         "evidence_events": [_event_dict(i, e) for i, e in enumerate(struct_events)],
         "recent_bars": _recent(df, cur.support, cur.resistance, cur.atr),

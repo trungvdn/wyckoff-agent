@@ -39,6 +39,13 @@ export interface PhaseSegment {
   i1: number;
 }
 
+export interface StageSegment {
+  kind: "up" | "down" | "range" | "none";
+  label: string;
+  i0: number;
+  i1: number;
+}
+
 export type StepStatus = "done" | "current" | "pending";
 
 export interface PhaseInfo {
@@ -51,6 +58,47 @@ export interface PhaseInfo {
   resistance: number | null;
   atr: number;
   range_context: string | null;
+}
+
+export interface StrengthSignal {
+  key: string;
+  title: string;
+  text: string;
+  points: number; // -1 | 0 | +1
+}
+
+export interface TrendStrength {
+  side: "demand" | "supply";
+  level: "mạnh" | "trung bình" | "yếu đi";
+  score: number;
+  headline: string;
+  up_volume_pct: number | null; // tỷ trọng khối lượng phiên tăng
+  window: number;
+  signals: StrengthSignal[];
+  correction: { active: boolean; quality: "light" | "normal" | "heavy" | null; verdict: string };
+}
+
+export interface StageInfo {
+  view: "range" | "trend" | "transition"; // trong range: có pha; xu hướng: có sức mạnh cung cầu
+  stage: string | null; // Markup | Markdown; null khi trong range hoặc chưa có xu hướng
+  structure_type: string;
+  strength: TrendStrength | null;
+  note: string | null; // lưu ý từ kết quả kiểm định khi có pha C trong range
+  distribution_phase: {
+    phase: string | null;
+    title: string;
+    steps: { id: string; status: StepStatus }[];
+    since: string | null;
+    reason: string;
+    events: string[];
+  } | null; // pha theo sơ đồ phân phối khi đang trong range, chỉ ghi nhận
+  title: string;
+  since: string | null;
+  reason: string;
+  prior_stage: string | null;
+  candidates: string[]; // giả thuyết khi đang trong range, chưa chốt
+  range_id: number | null;
+  last_resolved: { range_id: number; label: string; date: string } | null;
 }
 
 export interface ConfidenceFactor {
@@ -87,13 +135,16 @@ export interface Level {
 }
 
 export interface Target {
+  direction: "up" | "down";
+  reached: boolean; // giá hiện tại đã đi qua mức thận trọng
   columns: number;
   box: number;
   reversal: number;
   count_from: string;
   count_to: string;
   count_to_event: string | null;
-  base_low: number;
+  base_low?: number;
+  base_high?: number;
   count_line: number;
   conservative: number;
   aggressive: number;
@@ -112,11 +163,14 @@ export interface Analysis {
   chart_events: ChartEvent[];
   ranges: RangeBox[];
   phase_segments: PhaseSegment[];
+  stage_segments: StageSegment[];
+  stage: StageInfo;
   phase: PhaseInfo;
   confidence: Confidence;
   events: WyckoffEvent[];
   levels: Level[];
   target: Target | null;
+  target_down: Target | null;
   market: { benchmark: string; trend: string; rs_change_60d_pct: number | null } | null;
 }
 

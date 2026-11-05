@@ -20,7 +20,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Card, CardHeader, Eyebrow, cx } from "@/components/ui/Card";
 import { fmtDate, fmtDateShort, fmtPct, fmtPrice, fmtRatio, fmtVolume } from "@/lib/format";
 import type { Analysis, Bar } from "@/lib/types";
-import { EventLabels, PaneLabel, PhaseBands, RangeBoxes } from "./chartPrimitives";
+import { EventLabels, PaneLabel, PhaseBands, RangeBoxes, StageStrip } from "./chartPrimitives";
 
 const RIGHT_GAP = 4;          // số ô trống bên phải nến cuối
 const DENSE_BARS = 250;       // nhìn rộng hơn: ẩn chữ sự kiện của các cấu trúc cũ để biểu đồ đỡ dày
@@ -97,6 +97,14 @@ function Legend() {
           <span className="h-2.5 w-1.5 bg-phase-invalid/50" />
         </span>
         Pha A–E, vô hiệu
+      </li>
+      <li className="flex items-center gap-1.5">
+        <span aria-hidden="true" className="flex">
+          <span className="h-2.5 w-1.5 bg-pos/60" />
+          <span className="h-2.5 w-1.5 bg-event-dim" />
+          <span className="h-2.5 w-1.5 bg-neg/60" />
+        </span>
+        Dải giai đoạn
       </li>
       <li className="flex items-center gap-1.5">
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5 0 10 10 0 10" className="fill-event" /></svg>
@@ -190,6 +198,12 @@ export function PriceChart({ data: d }: { data: Analysis }) {
       event,
       `600 12px ${fontFamily}`,
       DENSE_BARS,
+    ));
+    const stageColor = { up: color("pos"), down: color("neg"), range: color("event-dim"), none: color("pending") };
+    candles.attachPrimitive(new StageStrip(
+      d.stage_segments.map((s) => ({ ...s, color: stageColor[s.kind] })),
+      color("fg"),
+      `600 11px ${fontFamily}`,
     ));
     const initial = viewRef.current ?? presetSpan("default", d);
 

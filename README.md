@@ -30,8 +30,10 @@ config/default.yaml        mọi ngưỡng (chỉ cần ghi khóa muốn đổi)
 wyckoff/config.py          dataclass cấu hình + load YAML (báo lỗi khóa sai)
 wyckoff/data/              fetcher.py (vnstock, chuẩn hóa, kiểm tra), cache.py, loader.py (get_ohlcv)
 wyckoff/indicators/core.py ATR Wilder, TB volume, spread, close_pos, SMA
-wyckoff/detectors/         swings.py, trading_range.py, events.py (SC/Spring/SOS), structure.py (PS/AR/ST/LPS/UTAD), lifecycle.py (vòng đời event), models.py
+wyckoff/detectors/         swings.py, trading_range.py, events.py (SC/Spring/SOS), structure.py (PS/AR/ST/LPS/UTAD), distribution.py (BC/AR(d)/ST(d)/SOW/LPSY, chỉ ghi nhận), lifecycle.py (vòng đời event), models.py
 wyckoff/phases.py          state machine pha A–E, current_phase()
+wyckoff/phases_distribution.py  pha A–E theo sơ đồ phân phối, chạy song song, chỉ ghi nhận
+wyckoff/stages.py          giai đoạn và loại cấu trúc (chỉ ghi nhận), current_stage()
 wyckoff/market.py          bối cảnh thị trường: xu hướng chỉ số, RS, phân kỳ đáy, đối chiếu sự kiện
 wyckoff/charts/plot.py     plotly: nến + volume + range + sự kiện
 wyckoff/agent/             GĐ2: payload.py, prompts.py, llm.py, validate.py, explain.py, report.py
@@ -74,7 +76,7 @@ Các tỉ số được **làm tròn 2 chữ số** trước khi so ngưỡng (0
 | **AR** | Đỉnh pivot (3 phiên mỗi bên) đầu tiên trong 30 phiên sau SC với high ≥ đáy SC + 3 ATR. Xác nhận ở pivot + 3. SC đã failed thì không có AR |
 | **ST** | Sau AR, trong 60 phiên: low ∈ [đáy SC − 0.5 ATR, đáy SC + 1 ATR], volume < 0.7 × volume SC, biên độ < biên độ SC, close ≥ đáy SC; các ST cách nhau ≥ 10 phiên |
 | **LPS** | Sau SOS, trong 20 phiên: low ≥ resistance − 1 ATR, low ≤ close cao nhất từ SOS − 0.5 ATR, vol_ratio < 1.0, spread_atr < 1.0; xác nhận khi trong 3 phiên sau có close > high phiên LPS. Mỗi SOS tối đa một LPS |
-| **UTAD** | Range xác nhận ≥ 20 phiên; phiên đầu tiên high > resistance + max(0.1 ATR, 1 tick); trong ≤ 3 phiên close ≤ resistance − 1 tick với close_pos ≤ 0.5. Là sự kiện cảnh báo: vô hiệu cấu trúc tích lũy |
+| **UTAD** | Range xác nhận ≥ 20 phiên; phiên đầu tiên high > resistance + max(0.1 ATR, 1 tick); trong ≤ 3 phiên close ≤ resistance − 1 tick với close_pos ≤ 0.5. Là sự kiện cảnh báo: vô hiệu cấu trúc tích lũy (`utad.mode: v2`, mặc định). `utad.mode: ut_utad` (H6): upthrust đầu tiên trong range = **UT**, từ lần thứ hai = **UTAD**; chỉ xác nhận khi trong 15 phiên sau phiên quay lại có close < giữa range (close > đỉnh upthrust hoặc hết 15 phiên → candidate INVALIDATED) |
 
 Mặc định **không lọc Spring theo bối cảnh** (nhãn bối cảnh vẫn ghi để LLM đánh giá); bỏ một nhãn khỏi `spring.allowed_contexts` để lọc.
 
@@ -89,13 +91,82 @@ SC/AR/ST gắn vào range khi |SC − phiên bắt đầu range| ≤ 10 phiên v
 | C | Spring (volume thấp, hoặc shakeout + Test) | → D khi SOS |
 | D | SOS (LPS được ghi nhận) | → E khi range thoát lên |
 | E | Range thoát lên (3 close > resistance + 0.5 ATR) | — |
-| invalid | UTAD; range thoát xuống; pha C có close < đáy Spring − 0.5 ATR | cấu trúc mới khi có SC hoặc range mới; → D khi có **SOS reclaim** |
+| invalid | UTAD (hoặc UT/UTAD đã xác nhận yếu kém khi `ut_utad`); range thoát xuống; pha C có close < đáy Spring − 0.5 ATR | cấu trúc mới khi có SC hoặc range mới; → D khi có **SOS reclaim** |
 
 `current_phase()` trả về pha, ngày bắt đầu, support/resistance, ATR, bằng chứng (các sự kiện của cấu trúc) và
 **mức xác nhận / vô hiệu tính sẵn**: A → ST / thủng đáy SC (vùng climax kéo dài, không vô hiệu); B → Spring, SOS / range thoát xuống; C → SOS / đáy Spring − 0.5 ATR;
 D → thoát range / mức theo `phase.d_invalid_mode` (mặc định `range_mid`: giữa range; `lps_or_res_atr` (v1): đáy LPS hoặc
 resistance − 1 ATR; `support`: support – chọn theo backtest: sau khi thủng mức v1 hoặc support, giá vẫn tăng hơn chỉ số); E → quay lại dưới resistance. Cảnh báo khi phiên cuối đóng cửa sát đáy (close_pos ≤ 0.2) với volume ≥ 1.2× TB20,
 và ở pha C khi Spring xuyên ≥ 1 ATR dưới support (`phase.deep_spring_atr`).
+
+## Giai đoạn và loại cấu trúc (`wyckoff/stages.py`, chỉ ghi nhận)
+
+Tầng 1 (Accumulation, Markup, Distribution, Markdown) suy ra từ tầng 2 (loại cấu trúc). State machine causal, chỉ dùng close, SMA50 và
+range đã xác nhận / đã kết thúc tại phiên đó. **Không đổi** sự kiện, pha, điểm tin cậy, backtest (khóa `stage` trong YAML).
+
+| Trạng thái | Khi nào |
+|---|---|
+| **Trending Up** (Markup) | 5 close liên tiếp trên SMA50 đang tăng (so với 20 phiên trước), hoặc range thoát lên |
+| **Trending Down** (Markdown) | 5 close liên tiếp dưới SMA50 đang giảm, hoặc range thoát xuống |
+| **Transition / Uncertain** | Chưa có xu hướng; 5 close liên tiếp sai phía SMA50; hoặc đang trong range đã xác nhận |
+
+Trong range chỉ có hai giả thuyết theo xu hướng trước range (tìm trong 60 phiên; không có thì dùng nhãn đà giá 120 phiên). Nhãn chốt khi range thoát:
+
+| Trước range | Thoát lên | Thoát xuống |
+|---|---|---|
+| Markup | Re-accumulation | Initial Distribution |
+| Markdown | Initial Accumulation | Re-distribution |
+| Không rõ | Accumulation (chưa rõ loại) | Distribution (chưa rõ loại) |
+
+- Nhãn đã chốt **mô tả điều đã xảy ra, không phải dự báo**: hướng thoát range gần như 50/50 ở mọi bối cảnh (311 mã).
+- `result.stages.series` là nhãn như biết tại từng phiên, không ghi đè về sau; `result.stages.ranges` là nhãn từng range (`resolved_idx` = phiên chốt).
+- Pha A–E và điểm tin cậy vẫn theo sơ đồ tích lũy, nên pha và giai đoạn có thể khác nhau (ví dụ SOS reclaim đưa về pha D trong khi giai đoạn còn Markdown).
+- Đầu ra: `<MÃ>_stages.csv`; payload v7 thêm `current_stage` (kèm `strength`), `stage_history`; prompt v6; `summary` của LLM phải nêu đúng loại cấu trúc.
+
+**Sức mạnh cung cầu** (`wyckoff/strength.py`, khóa `strength` trong YAML): chỉ có ở Markup (cầu) và Markdown (cung). Chỉ mô tả hiện trạng, **chưa kiểm định bằng backtest**.
+Ba tín hiệu, mỗi tín hiệu −1 / 0 / +1; tổng ≥ 2 mạnh, ≤ −1 yếu đi, còn lại trung bình:
+
+| Tín hiệu | +1 | −1 |
+|---|---|---|
+| Khối lượng 20 phiên | Phiên cùng chiều xu hướng chiếm ≥ 55% | ≤ 45% |
+| Đỉnh đáy (hai đỉnh, hai đáy đã xác nhận trong 60 phiên) | Cả đỉnh và đáy đi đúng chiều | Cả đỉnh và đáy đi ngược chiều |
+| Nhịp điều chỉnh / nhịp hồi (cách cực trị ≥ 2 phiên và ≥ 0,5 ATR) | < 38,2% nhịp trước đó và volume < 1,0x TB20 | ≥ 61,8%, hoặc volume ≥ 1,3x TB20, hoặc close sai phía SMA50 |
+
+**Dashboard** (`StagePhaseCard`, một thẻ): trong range hiện giả thuyết giai đoạn, pha, tiến trình A–E, điểm tin cậy; Markup / Markdown hiện sức mạnh cung cầu và nhịp điều chỉnh, không hiện pha; ngoài range và chưa có xu hướng chỉ nêu trạng thái.
+
+## Sự kiện phía phân phối (`wyckoff/detectors/distribution.py`, chỉ ghi nhận)
+
+Nằm trong `result.distribution`, xuất ra `<MÃ>_distribution.csv`. **Không** vào `result.events`, pha tích lũy, tin cậy hay backtest (khóa `distribution` trong YAML).
+
+| Sự kiện | Điều kiện (đối xứng phía tích lũy, trừ chỗ ghi riêng) |
+|---|---|
+| **BC** | vol_ratio > 2; **tăng ≥ 30%** từ close thấp nhất 60 phiên; close > SMA50; high cao nhất 60 phiên. Dạng climax: True Range > 1,5 ATR, **không khóa trần**; xác nhận khi close_pos ≤ 0,5 hoặc trong 2 phiên sau có close < điểm giữa nến mà không vượt đỉnh. Dạng chuỗi trần: ≥ 3 phiên tăng trần trong 10 phiên trước, phiên hiện tại close_pos ≤ 0,5. BC mới trong 10 phiên chỉ giữ nếu đỉnh cao hơn |
+| **BC failed** | Trong 30 phiên, trước AR(d): close > đỉnh BC + 0,5 ATR |
+| **AR(d)** | Đáy pivot (3 phiên mỗi bên) đầu tiên trong 30 phiên sau BC, low ≤ đỉnh BC − 3 ATR |
+| **ST(d)** | Sau AR(d), trong 60 phiên: high ∈ [đỉnh BC − 1 ATR, đỉnh BC + 0,5 ATR], volume < 0,7× BC, biên độ < BC, close ≤ đỉnh BC; cách nhau ≥ 10 phiên |
+| **SOW** | Trong range: nến giảm; close < support − 0,2 ATR; spread_atr > 1,2; vol_ratio > 1,5; close_pos ≤ 0,3. **Dạng chuỗi khóa sàn**: phiên khóa sàn đầu tiên đạt ≥ 2 phiên khóa sàn trong 3 phiên, close < support − 0,2 ATR, không xét volume và biên độ; một phiên khóa sàn đơn lẻ không tự động là SOW |
+| **LPSY** | Sau SOW, trong 20 phiên: high ≤ support + 1 ATR, high ≥ close thấp nhất từ SOW + 0,5 ATR, vol_ratio < 1, spread_atr < 1; xác nhận khi trong 3 phiên sau có close < low phiên đó |
+
+Vô hiệu sau xác nhận (trong 60 phiên): BC ← BC failed; SOW ← close > giữa range; LPSY ← close > đỉnh LPSY + 0,5 ATR.
+`tests/test_distribution.py` kiểm tra đối xứng bằng cách lật giá. Khác biệt riêng của BC chọn theo số đếm, không theo lợi suất.
+
+**Khảo sát cấu trúc (311 mã, từ 2018)**: BC 1.656 (SC 1.410), BC failed 42% (SC failed 39%), AR(d) 1.012, ST(d) 1.052, SOW 1.711 gồm 1.351 biên độ rộng và 360 chuỗi khóa sàn (SOS 3.996). Vẫn lệch: 39% range thoát xuống có SOW (31% trước khi thêm dạng chuỗi khóa sàn), trong khi 71% range thoát lên có SOS.
+
+**Pha theo sơ đồ phân phối** (`wyckoff/phases_distribution.py`, `result.distribution_phases`, `<MÃ>_distribution_phases.csv`): state machine causal chạy **song song** với pha tích lũy, vì trong range chưa biết giả thuyết nào đúng. Chỉ ghi nhận, không có điểm tin cậy và mức giá.
+
+| Pha | Mở khi | Chuyển tiếp |
+|---|---|---|
+| A | BC xác nhận | → B khi có ST(d) |
+| B | ST(d), hoặc range xác nhận không có BC | → C khi UT / UTAD; → D khi SOW |
+| C | UT / UTAD | → D khi SOW |
+| D | SOW (LPSY được ghi nhận) | → E khi range thoát xuống |
+| E | Range thoát xuống | — |
+| invalid | Range thoát lên; pha C có close > đỉnh upthrust + 0,5 ATR | cấu trúc mới khi có BC hoặc range mới |
+
+Khác phía tích lũy: Spring không vô hiệu cấu trúc phân phối, không có "SOS reclaim" đối xứng. Payload v8 thêm `current_stage.distribution_phase` khi đang trong range; prompt v8. Dashboard hiện cả hai sơ đồ trong thẻ `StagePhaseCard` khi đang trong range; có pha C thì kèm ghi chú kết quả H8.
+
+**Trên dashboard**: dải giai đoạn ở đáy biểu đồ (Markup, Markdown, range; range đã thoát ghi nhãn đã chốt, chưa thoát ghi `TR ?`); sự kiện phía phân phối của cấu trúc hiện tại (không hiện khi đang Markup).
+**Mục tiêu P&F chiều xuống** (`pnf.cause_effect_target_down`, chỉ trên dashboard, pha C, D, E theo sơ đồ phân phối): thận trọng = đỉnh cấu trúc − cột × ô × 3; tích cực = đường đếm (đỉnh LPSY, chưa có thì resistance) − cột × ô × 3. Đang Markup chỉ hiện mục tiêu lên, đang Markdown chỉ hiện mục tiêu xuống, trong range hiện cả hai nếu đủ điều kiện. Ước lượng, chưa kiểm định bằng backtest.
 
 ## Chống look-ahead
 - Chỉ báo causal; swing có độ trễ xác nhận; range xử lý online; Spring xác nhận ở phiên quay lại.
@@ -239,7 +310,7 @@ npm run build && npm start             # bản production (Node >= 20.9)
 Trang phân tích chạy trên server (gọi `WYCKOFF_API_URL`); `loading.tsx` hiện skeleton khi đổi mã / khung. Diễn giải agent,
 hỏi đáp và Phân tích lại chạy ở client qua `/api/*` (Next rewrite sang FastAPI, không cần CORS). Font IBM Plex tự host bằng
 `next/font`. Thành phần: `components/layout` (Header, Footer, trạng thái), `components/ui` (Card, Button, Skeleton),
-`components/dashboard` (PriceChart, PhaseCard, EventsCard, ScenarioCard, AskAgent...).
+`components/dashboard` (PriceChart, StagePhaseCard, EventsCard, ScenarioCard, AskAgent...).
 Biểu đồ dùng TradingView Lightweight Charts: con lăn / pinch để zoom, kéo để xem ngày cũ, nút 3T–Tất cả, phím mũi tên và +/−; API trả toàn bộ lịch sử đã phân tích (`bars`) kèm khung nhìn mặc định (`view_from`) và các đoạn pha (`phase_segments`), vẽ thành dải nền theo pha như báo cáo HTML. Kiểm tra: `npm run lint`, `npm run typecheck`, `npm run build`.
 
 Một màn hình cho một mã: biểu đồ nến + vùng giao dịch + nhãn sự kiện, pha hiện tại và các yếu tố tin cậy, bằng chứng
@@ -251,10 +322,13 @@ nến ngày (chỉ tham khảo); 15 phút / Giờ chưa hỗ trợ.
 - **Hỏi agent** (`wyckoff/agent/ask.py`): cùng nguyên tắc diễn giải – chỉ dùng số trong payload (số người dùng tự gõ trong
   câu hỏi được phép nhắc lại), không tên trường kỹ thuật, `event_ids` phải tồn tại; sai -> thử lại 1 lần -> trả lời theo mẫu.
 - **Mục tiêu P&F** (`wyckoff/pnf.py`, khóa `pnf` trong YAML): P&F theo close, ô = 0,5 ATR lúc range xác nhận (làm tròn lên
-  theo tick), đảo chiều 3 ô; đếm số cột từ đầu range đến LPS (chưa có LPS: đến trước SOS; chưa có SOS: đến phiên cuối, **tạm tính**).
+  theo tick), đảo chiều 3 ô; đếm số cột từ đầu range đến LPS (chưa có LPS: đến trước SOS; chưa có SOS: đến cuối range; range chưa kết thúc: đến phiên cuối, **tạm tính**).
   Thận trọng = đáy thấp nhất cấu trúc + cột × ô × 3; tích cực = đường đếm (đáy LPS, chưa có thì support) + cột × ô × 3. Chỉ tính ở pha C, D, E.
 - Đặc tả giao diện cho dev: `docs/handoff-dashboard.md`. Biến môi trường: `WYCKOFF_CONFIG`, `WYCKOFF_CACHE_DIR`, `WYCKOFF_OUT_DIR`,
   `WYCKOFF_MODEL`, `WYCKOFF_NO_LLM`, `WYCKOFF_NO_MARKET`, `WYCKOFF_DEFAULT_SYMBOL`.
 - Chưa có xác thực / giới hạn tần suất: mặc định chỉ nghe `127.0.0.1`; cần bổ sung trước khi mở ra Internet.
 - **Giả thuyết H4** (`docs/h4-preregistration.md`, 308 mã): H4a SC hai phiên (`config/h4a.yaml`) và H4b range neo theo SC–AR (`config/h4b.yaml`) – **không chấp nhận**, mặc định tắt. H4b trung tính với thang tin cậy (chênh lệch cao − thấp +1,56 so với +1,55; P = 0,53). Chạy lại: `scripts/parallel_study.py`, `scripts/h4_eval.py`.
 - **Giả thuyết H5** (`docs/h5-preregistration.md`, 311 mã): H5a SOS cần follow-through (`config/h5a.yaml`) và H5b chỉ phiên khóa trần cần follow-through (`config/h5b.yaml`) – **không chấp nhận**, mặc định `same_bar`. H5a: cao − thấp +1,53 so với +1,46 nhưng 2023–nay mức cao 60 phiên −2,03 so với −1,51, P = 0,61. Tham khảo: H5a loại 19% SOS, SOS còn lại 20 phiên +0,59 so với +0,17. Chạy lại: `scripts/parallel_study.py`, `scripts/h5_eval.py`.
+- **Giả thuyết H6** (`docs/h6-preregistration.md`, 311 mã): tách UT / UTAD và chỉ xác nhận khi có yếu kém (`config/h6.yaml`, `utad.mode: ut_utad`) – **không chấp nhận** (trượt tiêu chí 2023–nay: −1,57 so với −1,51), mặc định `v2`. Đạt 4/5: cao − thấp +1,57 so với +1,46, P = 0,82. Tham khảo: upthrust kiểu v2 có lợi suất dương (20 phiên +1,01), UT đã xác nhận −0,14; pha invalid 20 phiên −0,21 so với +0,01. Chạy lại: `scripts/parallel_study.py`, `scripts/h6_eval.py`.
+- **Giả thuyết H7** (`docs/h7-preregistration.md`, 311 mã): H7a thêm yếu tố sức mạnh cung cầu (`config/h7a.yaml`) và H7b thay nhãn đà giá bằng xu hướng trước range (`config/h7b.yaml`) – **không chấp nhận**, mặc định tắt. H7a: cao − thấp +1,30 so với +1,46, P = 0,07. H7b: +1,45 so với +1,46, P = 0,53. Tham khảo: Trending Up 60 phiên +1,58 so với nền, Trending Down −1,12; Re-accumulation +3,20, Re-distribution −2,11 (chưa có CI, có thể chỉ là quán tính giá). Chạy lại: `scripts/parallel_study.py`, `scripts/h7_reference.py`, `scripts/h7_eval.py`.
+- **Giả thuyết H8** (`docs/h8-preregistration.md`, 311 mã; `wyckoff/evidence.py`, chưa nối vào pipeline): điểm bằng chứng trong range có nghiêng được giả thuyết sớm không – **không chấp nhận**, không hiện trên dashboard. H8a (chỉ sự kiện trong range): **ngược chiều lý thuyết**, nghiêng tích lũy thoát lên 34,3%, nghiêng phân phối thoát xuống 24,1% (nền 52,5% / 47,5%), chênh bexcess 20 phiên −1,54 [−2,57; −0,57]. H8b (thêm SOS, SOW, LPS, LPSY): tỷ lệ thoát 88% / 87% nhưng chỉ sớm 2 phiên. Tham khảo: range chỉ có Spring thoát lên 18,0%, chỉ có UTAD thoát lên 84,2%; chưa rõ nguyên nhân, không đảo dấu để dùng. Chạy lại: `scripts/h8_eval.py`.

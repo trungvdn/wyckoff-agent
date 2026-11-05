@@ -159,6 +159,14 @@ class UTADConfig:
     max_return_bars: int = 3          # trong 3 phiên đóng cửa <= resistance - 1 tick ...
     return_ticks: int = 1
     max_close_pos: float = 0.5        # ... với close_pos <= 0.5
+    # H6 (quy chuẩn 04/11/2026 mục 5.5–5.6): v2 = mọi upthrust là UTAD, xác nhận tại phiên quay lại;
+    # ut_utad = upthrust đầu tiên trong range là UT, từ lần thứ hai là UTAD; xác nhận khi trong weakness_window phiên
+    # sau phiên quay lại có close < giữa range, vô hiệu khi close > đỉnh upthrust hoặc hết thời hạn.
+    mode: str = "v2"
+    weakness_window: int = 15
+
+
+UTAD_MODES = ("v2", "ut_utad")
 
 
 @dataclass(frozen=True)
@@ -175,6 +183,9 @@ class ConfidenceConfig:
     after_decline: int = -1      # v1: "accumulation" +1 – backtest: range sau nhịp giảm kém nhất
     after_rise: int = 0          # v1: "distribution" -1 – backtest: không kém range trung tính
     test_max_vol_vs_shakeout: float = 0.5
+    # Giả thuyết H7 (docs/h7-preregistration.md), mặc định tắt
+    stage_strength: bool = False  # H7a: thêm yếu tố sức mạnh cung cầu trong Markup / Markdown
+    prior_stage: bool = False     # H7b: thay điểm nhãn đà giá bằng xu hướng trước range
 
 
 @dataclass(frozen=True)
@@ -242,6 +253,78 @@ class LifecycleConfig:
 
 
 @dataclass(frozen=True)
+class DistributionConfig:
+    """Sự kiện phía phân phối (wyckoff/detectors/distribution.py): chỉ ghi nhận, không đổi pha / tin cậy / backtest.
+    Đối xứng với SC, AR, ST, SOS, LPS; khác: `bc_min_rise`, `bc_exclude_ceiling_locked` (hiệu chỉnh theo số đếm, không theo lợi suất)."""
+    # BC
+    bc_min_vol_ratio: float = 2.0
+    bc_min_spread_atr: float = 1.5
+    bc_max_close_pos: float = 0.5     # đóng cửa ở nửa dưới nến
+    bc_trend_lookback: int = 60
+    bc_min_rise: float = 0.30         # tăng >= 30% từ close thấp nhất 60 phiên
+    bc_highest_high_lookback: int = 60
+    bc_cooldown_bars: int = 10        # bỏ BC trùng trong 10 phiên trừ khi tạo đỉnh cao hơn
+    bc_zone_bars: int = 2             # nến đóng cửa cao vẫn là BC nếu trong 2 phiên sau có close < điểm giữa nến
+    bc_exclude_ceiling_locked: bool = True  # phiên khóa trần không phải climax: chưa thấy cung hấp thụ cầu
+    ceiling_chain_min_days: int = 3   # dạng VN: >= 3 phiên tăng trần ...
+    ceiling_chain_window: int = 10    # ... trong 10 phiên trước phiên đảo chiều
+    bc_fail_atr: float = 0.5          # BC failed: close > đỉnh BC + 0.5 ATR ...
+    bc_fail_window: int = 30          # ... trong 30 phiên, trước khi có AR(d)
+    # AR(d)
+    ar_min_atr: float = 3.0           # đáy AR(d) <= đỉnh BC - 3 ATR
+    ar_pivot_bars: int = 3
+    ar_window: int = 30
+    # ST(d)
+    st_window: int = 60
+    st_band_above_atr: float = 0.5    # high trong [đỉnh BC - 1 ATR, đỉnh BC + 0.5 ATR]
+    st_band_below_atr: float = 1.0
+    st_max_vol_vs_bc: float = 0.7
+    st_max_spread_vs_bc: float = 1.0
+    st_min_gap_bars: int = 10
+    # SOW
+    sow_min_breakdown_atr: float = 0.2  # close < support - 0.2 ATR
+    sow_min_spread_atr: float = 1.2
+    sow_min_vol_ratio: float = 1.5
+    sow_max_close_pos: float = 0.3
+    sow_floor_chain_min_days: int = 2  # dạng VN: >= 2 phiên khóa sàn ...
+    sow_floor_chain_window: int = 3    # ... trong 3 phiên, close dưới support: không xét volume, biên độ (bị khóa sàn chặn)
+    # LPSY
+    lpsy_window: int = 20
+    lpsy_hold_below_sup_atr: float = 1.0  # high <= support + 1 ATR
+    lpsy_min_rally_atr: float = 0.5       # high >= close thấp nhất từ SOW + 0.5 ATR
+    lpsy_max_vol_ratio: float = 1.0
+    lpsy_max_spread_atr: float = 1.0
+    lpsy_confirm_bars: int = 3            # xác nhận: trong 3 phiên sau có close < low phiên LPSY
+    lpsy_invalid_atr: float = 0.5         # LPSY vô hiệu: close > đỉnh LPSY + 0.5 ATR
+
+
+@dataclass(frozen=True)
+class StageConfig:
+    """Giai đoạn / loại cấu trúc (wyckoff/stages.py): chỉ ghi nhận, không đổi pha / tin cậy / backtest."""
+    slope_bars: int = 20              # SMA tăng / giảm so với 20 phiên trước (như market.slope_bars)
+    enter_bars: int = 5               # 5 close liên tiếp đúng phía SMA đang dốc -> có xu hướng
+    exit_bars: int = 5                # 5 close liên tiếp sai phía SMA -> mất xu hướng
+    prior_max_bars: int = 60          # tìm xu hướng trước range trong tối đa 60 phiên
+
+
+@dataclass(frozen=True)
+class StrengthConfig:
+    """Sức mạnh cung cầu trong Markup / Markdown (wyckoff/strength.py): chỉ mô tả, chưa kiểm định bằng backtest."""
+    window: int = 20                  # đo tỷ trọng khối lượng trong 20 phiên
+    volume_strong_pct: float = 55.0   # phiên cùng chiều xu hướng chiếm >= 55% khối lượng -> +1
+    volume_weak_pct: float = 45.0     # <= 45% -> -1
+    swing_lookback: int = 60          # chỉ xét đỉnh đáy xác nhận trong 60 phiên
+    min_correction_bars: int = 2      # có nhịp điều chỉnh khi cách cực trị >= 2 phiên ...
+    min_correction_atr: float = 0.5   # ... và >= 0.5 ATR
+    shallow_retrace_pct: float = 38.2 # nông: < 38,2% nhịp trước đó
+    deep_retrace_pct: float = 61.8    # sâu: >= 61,8% nhịp trước đó
+    low_vol_ratio: float = 1.0        # volume nhịp điều chỉnh < 1.0 x TB20 là thấp
+    high_vol_ratio: float = 1.3       # >= 1.3 x TB20 là cao
+    strong_score: int = 2             # tổng điểm >= 2: mạnh
+    weak_score: int = -1              # tổng điểm <= -1: yếu đi
+
+
+@dataclass(frozen=True)
 class PnfConfig:
     box_atr: float = 0.5                # ô P&F = 0.5 ATR lúc range xác nhận (làm tròn lên theo tick)
     reversal: int = 3                   # đảo chiều 3 ô
@@ -268,6 +351,9 @@ class Config:
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     pnf: PnfConfig = field(default_factory=PnfConfig)
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
+    stage: StageConfig = field(default_factory=StageConfig)
+    strength: StrengthConfig = field(default_factory=StrengthConfig)
+    distribution: DistributionConfig = field(default_factory=DistributionConfig)
 
 
 def _build(cls: type[T], values: dict[str, Any] | None) -> T:

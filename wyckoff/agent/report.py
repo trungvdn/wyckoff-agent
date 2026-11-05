@@ -72,9 +72,20 @@ def template_market(m: dict[str, Any] | None) -> str:
     return " ".join(parts)
 
 
+def stage_text(cs: dict[str, Any]) -> str:
+    """Một câu mô tả giai đoạn hiện tại từ payload.current_stage."""
+    stage = f" ({cs['stage']})" if cs["stage"] else ""
+    cand = f", giả thuyết {' hoặc '.join(cs['candidates'])}" if cs["candidates"] else ""
+    strength = f" {cs['strength']['headline']}." if cs.get("strength") else ""
+    dist = cs.get("distribution_phase") or {}
+    dist_txt = f" Theo sơ đồ phân phối: pha {dist['phase']}." if dist.get("phase") and dist["phase"] != "invalid" else ""
+    return f"Giai đoạn: {cs['structure_type']}{stage}{cand}.{strength}{dist_txt}"
+
+
 def template_explanation(payload: dict[str, Any]) -> dict[str, Any]:
     """Diễn giải tất định từ payload; chỉ dùng số có trong payload nên luôn qua được validator."""
     cp = payload["current_phase"]
+    cs = payload["current_stage"]
     ph = cp["phase"]
     conf = payload["confidence"]
     rb = payload["recent_bars"]
@@ -86,11 +97,14 @@ def template_explanation(payload: dict[str, Any]) -> dict[str, Any]:
         rng = f" trong TR#{cp['range_id']} (vùng {vn(cp['support'])} – {vn(cp['resistance'])})" if cp["range_id"] is not None else ""
         summary = (f"{sym} đang ở pha {ph} – {PHASE_TEXT.get(ph, '')}{rng}, từ {vn_date(cp['since'])}. "
                    f"Lý do: {vn_dates_in(cp['reason'])}. Mức tin cậy theo quy tắc: {conf['level']}.")
+    summary = f"{stage_text(cs)} {summary}"
     ev_line = "; ".join(f"{e['kind']} {vn_date(e['date'])} (volume {vn(e['vol_ratio'])}x TB20, biên độ "
                         f"{vn(e['spread_atr'])} ATR, close_pos {vn(e['close_pos'])})" for e in evs)
     phase_assessment = (f"Pha {ph} được xác định bởi chuỗi sự kiện của cấu trúc: {ev_line}." if evs
                         else f"Pha {ph}: {vn_dates_in(cp['reason'])}.")
-    ctx = []
+    ctx = [f"Căn cứ giai đoạn: {vn_dates_in(cs['reason'])}."]
+    if cs.get("strength"):
+        ctx += [sig["text"] for sig in cs["strength"]["signals"]]
     if cp["range_context"]:
         pr = f" (lợi suất {vn(cp['range_prior_return_pct'], 1)}% trước range)" if cp["range_prior_return_pct"] is not None else ""
         ctx.append(f"Bối cảnh range: {cp['range_context']}{pr}.")
@@ -220,6 +234,7 @@ def render_html(
 <title>{_e(payload['symbol'])} – Wyckoff {_e(payload['as_of'])}</title><style>{_CSS}</style></head><body>
 <h1>{_e(payload['symbol'])} · phân tích Wyckoff</h1>
 <div class="meta">Dữ liệu đến {_e(vn_date(payload['as_of']))} · {_e(payload['data']['bars'])} phiên · giá {_e(payload['price_unit'])} · {_e(rng)}</div>
+<span class="badge ph">{_e(payload['current_stage']['structure_type'])}{' từ ' + _e(vn_date(payload['current_stage']['since'])) if payload['current_stage']['since'] else ''}</span>
 <span class="badge ph">Pha {_e(cp['phase'] or '—')}{' từ ' + _e(vn_date(cp['since'])) if cp['since'] else ''}</span>
 <span class="badge cf">Tin cậy: {_e(conf['level'])}</span><span class="badge src">Diễn giải: {_e(src_label)}</span>
 {warns}

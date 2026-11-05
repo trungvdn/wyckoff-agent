@@ -1,0 +1,3 @@
+# H7a (docs/h7-preregistration.md): thêm yếu tố sức mạnh cung cầu vào thang tin cậy. Các khóa khác = mặc định.
+confidence:
+  stage_strength: true

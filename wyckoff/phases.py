@@ -9,7 +9,7 @@ sự kiện -> kiểm tra giá (vô hiệu pha C).
     C  Spring (volume thấp / shakeout+Test) -> D khi SOS
     D  SOS (LPS ghi nhận)                -> E khi range thoát lên
     E  range thoát lên
-    invalid: UTAD, range thoát xuống, pha C close < đáy Spring - k ATR
+    invalid: UTAD (hoặc UT/UTAD đã xác nhận yếu kém, utad.mode ut_utad), range thoát xuống, pha C close < đáy Spring - k ATR
              -> D nếu trong `reclaim_window` phiên có SOS lấy lại resistance cũ (SOS reclaim). Range đã kết thúc nên
              sau đó E / invalid xét theo quy tắc thoát range của RangeConfig ngay trên biên cũ
              (SC failed chỉ vô hiệu khi phase.sc_failed_invalidates=True; mặc định giữ pha A
@@ -32,7 +32,7 @@ PHASES = ("A", "B", "C", "D", "E", "invalid")
 
 _EVENT_ORDER = {
     EventType.SC: 0, EventType.SC_FAILED: 1, EventType.PS: 2, EventType.AR: 3, EventType.ST: 4,
-    EventType.SPRING: 5, EventType.TEST: 6, EventType.SOS: 7, EventType.LPS: 8, EventType.UTAD: 9,
+    EventType.SPRING: 5, EventType.TEST: 6, EventType.SOS: 7, EventType.LPS: 8, EventType.UTAD: 9, EventType.UT: 9,
 }
 
 
@@ -220,9 +220,10 @@ def classify_phases(
             elif e.kind == EventType.LPS and same_range and cur.phase in ("D", "E"):
                 cur.events.append(e)
                 cur.lps = e
-            elif e.kind == EventType.UTAD and same_range and cur.phase in ("A", "B", "C", "D"):
+            elif e.kind in (EventType.UTAD, EventType.UT) and same_range and cur.phase in ("A", "B", "C", "D"):
                 cur.events.append(e)
-                set_phase(cur, "invalid", f"UTAD {_v(e)}, xác nhận {_v(e.confirmed_date)}")
+                how = ", yếu kém dưới giữa range" if "weakness_date" in e.details else ""
+                set_phase(cur, "invalid", f"{e.kind.value} {_v(e)}, xác nhận {_v(e.confirmed_date)}{how}")
 
         # 4. kiểm tra giá: pha C vô hiệu khi thủng đáy Spring
         if cur and cur.phase == "C" and cur.spring is not None and not np.isnan(atr_ref[t]):

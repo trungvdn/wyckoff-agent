@@ -12,7 +12,7 @@ export function DashboardSkeleton() {
         </Card>
         <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
           <Card>
-            <Eyebrow>Pha hiện tại</Eyebrow>
+            <Eyebrow>Giai đoạn và pha</Eyebrow>
             <Skeleton className="h-[26px] w-3/5" />
             <Skeleton />
             <Skeleton />

@@ -51,6 +51,14 @@ def print_report(symbol: str, result: AnalysisResult) -> None:
         rid = "" if g.range_id is None else f" TR#{g.range_id}"
         print(f"  {g.phase:7s} {g.start_date:%Y-%m-%d} -> {g.end_date:%Y-%m-%d}{rid}  [{g.reason}]")
 
+    print(f"\nSự kiện phía phân phối, chỉ ghi nhận ({len(result.distribution)}):")
+    for e in result.distribution:
+        print(f"  {e.evidence()}  <{e.event_id} | {e.status.value}>")
+
+    stage = result.current_stage()
+    print(f"\n=== GIAI ĐOẠN HIỆN TẠI: {stage.structure_type}" + (f" ({stage.stage})" if stage.stage else "") + " ===")
+    print(f"  {stage.reason}" + (f"; giả thuyết: {' hoặc '.join(stage.candidates)}" if stage.candidates else ""))
+
     cur = result.current()
     print(f"\n=== PHA HIỆN TẠI ({cur.date:%Y-%m-%d}): {cur.phase or 'chưa có cấu trúc'} ===")
     if cur.phase:
@@ -107,6 +115,9 @@ def main() -> None:
     result.events_frame(include_candidates=True).to_csv(out / f"{symbol}_events.csv", index=False)
     result.ranges_frame().to_csv(out / f"{symbol}_ranges.csv", index=False)
     result.phases_frame().to_csv(out / f"{symbol}_phases.csv", index=False)
+    result.stages_frame().to_csv(out / f"{symbol}_stages.csv", index=False)
+    result.distribution_frame().to_csv(out / f"{symbol}_distribution.csv", index=False)
+    result.distribution_phases_frame().to_csv(out / f"{symbol}_distribution_phases.csv", index=False)
     (out / f"{symbol}_current_phase.json").write_text(
         json.dumps(result.current().to_dict(), ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )

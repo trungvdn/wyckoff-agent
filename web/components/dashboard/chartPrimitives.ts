@@ -76,6 +76,66 @@ export class PhaseBands implements ISeriesPrimitive<Time> {
   }
 }
 
+export interface StageStripSpec {
+  i0: number;
+  i1: number;
+  label: string;
+  color: string;
+}
+
+const STAGE_STRIP_HEIGHT = 16;
+
+/** Dải giai đoạn mỏng ở đáy vùng giá, tên giai đoạn trong dải (ẩn nếu dải hẹp hơn chữ). */
+export class StageStrip implements ISeriesPrimitive<Time> {
+  private host: SeriesAttachedParameter<Time> | null = null;
+  private readonly views: IPrimitivePaneView[];
+
+  constructor(segments: StageStripSpec[], textColor: string, font: string) {
+    const renderer: IPrimitivePaneRenderer = {
+      draw: (target) => {
+        const time = this.host?.chart.timeScale();
+        if (!time) return;
+        const half = time.options().barSpacing / 2;
+        target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+          const top = mediaSize.height - STAGE_STRIP_HEIGHT;
+          context.font = font;
+          context.textAlign = "left";
+          for (const s of segments) {
+            const x0 = time.logicalToCoordinate(s.i0 as Logical);
+            const x1 = time.logicalToCoordinate(s.i1 as Logical);
+            if (x0 === null || x1 === null) continue;
+            const left = x0 - half;
+            const width = x1 - x0 + 2 * half;
+            context.fillStyle = s.color;
+            context.globalAlpha = 0.45;
+            context.fillRect(left, top, width, STAGE_STRIP_HEIGHT);
+            const labelX = Math.max(left, 0) + 4;
+            if (s.label && left + width - labelX >= context.measureText(s.label).width + 4) {
+              context.globalAlpha = 1;
+              context.fillStyle = textColor;
+              context.fillText(s.label, labelX, top + 12);
+            }
+          }
+          context.globalAlpha = 1;
+        });
+      },
+    };
+    this.views = [{ zOrder: () => "normal", renderer: () => renderer }];
+  }
+
+  attached(param: SeriesAttachedParameter<Time>) {
+    this.host = param;
+  }
+
+  detached() {
+    this.host = null;
+  }
+
+  paneViews() {
+    return this.views;
+  }
+}
+
 /** Tô nền và viền các trading range, nằm dưới nến; tọa độ tính lại mỗi lần vẽ nên theo sát zoom và kéo. */
 export class RangeBoxes implements ISeriesPrimitive<Time> {
   private host: SeriesAttachedParameter<Time> | null = null;
