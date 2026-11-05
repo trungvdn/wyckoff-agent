@@ -194,7 +194,7 @@ function AccumulationEvidence({ acc }: { acc: NonNullable<StageInfo["accumulatio
   return (
     <details className="flex flex-col gap-2 border-t border-line pt-3">
       <summary className="flex min-h-8 cursor-pointer items-center text-[13px] text-muted hover:text-fg">
-        {acc.structure_type === "Re-accumulation" ? "Re-accumulation" : "Accumulation"}: {ACC_LEVEL[acc.level]} · {acc.conditions.filter((c) => c.met).length}/{acc.conditions.length} bằng chứng
+        {acc.structure_type.replace("Initial ", "")}: {ACC_LEVEL[acc.level]} · {acc.conditions.filter((c) => c.met).length}/{acc.conditions.length} bằng chứng
         {acc.leaning ? ` · nghiêng về ${acc.leaning}` : ""}
       </summary>
       <ul className="m-0 mt-2 flex list-none flex-col gap-2 p-0 text-[13px] text-fg-2">
@@ -247,6 +247,7 @@ export function StagePhaseCard({ stage: s, phase, confidence }: { stage: StageIn
         </p>
       )}
       {s.accumulation && <AccumulationEvidence acc={s.accumulation} />}
+      {s.distribution && <AccumulationEvidence acc={s.distribution} />}
       {s.last_resolved && (
         <p className="m-0 text-[13px] text-muted">
           Range gần nhất: TR#{s.last_resolved.range_id} là {s.last_resolved.label} ({fmtDate(s.last_resolved.date)}).

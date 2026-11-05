@@ -287,6 +287,8 @@ class RevisionConfig:
     lps_supply_spread_atr: float = 1.5    # ... và biên độ >= 1,5 ATR: cung còn mạnh, không phải LPS
     lps_min_value_bn: float = 1.0     # thanh khoản: giá trị giao dịch TB20 >= 1 tỷ đồng
     lps_internal_strength: bool = True    # tính cả SOS nội bộ trong range làm nền cho LPS dưới resistance
+    # Markup trước đó, dùng chung cho Re-accumulation và Distribution
+    prior_up_min_rise: float = 0.30   # hoặc đã có HH-HL, hoặc tăng từ 30% so với đáy `context_lookback` phiên trước range
     # Accumulation (docs/stage-definitions.md)
     acc_window: int = 20              # so sánh cung cầu trên 20 phiên gần nhất
     acc_absorb_vol_ratio: float = 1.5 # hấp thụ cung: phiên volume >= 1,5x TB20 ở nửa dưới range, giá không giảm tương ứng

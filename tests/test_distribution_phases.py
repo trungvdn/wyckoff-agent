@@ -252,7 +252,9 @@ def test_view_in_range_shows_note_and_down_target() -> None:
     v = build_view(res, build_payload(res, "X"), "X", "1D")
     assert v["stage"]["view"] == "range" and v["stage"]["distribution_phase"]["phase"] == "C" and v["stage"]["note"] == H8_NOTE
     assert v["target_down"] is not None
-    assert stage_segments(res)[-1]["label"] == "TR ?"
+    # Range sau xu hướng tăng, chưa có bằng chứng cung cầu: ứng viên, chưa phân định Re-accumulation hay Distribution
+    assert stage_segments(res)[-1]["label"] == "Re-acc?"
+    assert res.revision.primary_of(res.ranges[-1].range_id)[1] is False
 
 
 def test_view_no_note_without_phase_c() -> None:

@@ -8,7 +8,10 @@ Tài liệu này ghi điều kiện để hệ thống gọi tên một giai đo
 | Accumulation | Định nghĩa lại 05/11/2026 |
 | Markup | Định nghĩa lại 05/11/2026 |
 | Re-accumulation | Định nghĩa lại 05/11/2026; là cấu trúc trong Markup, không phải giai đoạn riêng |
-| Distribution | Chưa định nghĩa lại, theo hướng thoát range |
+| Distribution | Định nghĩa lại 05/11/2026 |
+| Redistribution | Chưa định nghĩa; là cấu trúc trong Markdown, hiện vẫn theo hướng thoát range |
+
+Phân tầng: **Market State** gồm Accumulation, Markup, Distribution, Markdown. **Market Structure** gồm Trading Range, Re-accumulation, Redistribution.
 
 ## Nguyên tắc chung
 
@@ -346,7 +349,7 @@ Dùng chung `_range_verdicts` với Accumulation. Khác biệt:
 
 | Yếu tố | Cách đo |
 |---|---|
-| Markup trước đó | Ngay từ đầu range, xu hướng Markup đã đạt từ Developing trở lên, tức đã có HH–HL trước range. Markup còn tiềm năng thì range đó không được xét là Re-accumulation |
+| Markup trước đó | Dùng chung với Distribution (`_prior_markup`): ngay từ đầu range, Markup đã đạt từ Developing trở lên (đã có HH–HL trước range); hoặc xu hướng tăng kéo dài: close đầu range cao hơn đáy 120 phiên trước từ 30%, và trước range không phải Markdown |
 | Cấu trúc tăng chưa bị phá | Close không thấp hơn đáy swing gần nhất trước range (HL cuối của xu hướng) quá 0,5 ATR. Phá mức này thì bị bác bỏ |
 | Áp lực bán suy yếu | Phiên giảm gần đây có volume hoặc biên độ không cao hơn phiên tăng trong range; 10 phiên gần nhất không close dưới support − 0,5 ATR |
 | Nghiêng về | **Re-accumulation** khi đã Confirmed, hoặc volume phiên tăng cao hơn phiên giảm và chưa có đáy thấp hơn. **Distribution** khi phiên giảm có volume và biên độ cùng cao hơn phiên tăng, kèm đỉnh hoặc đáy thấp hơn. Còn lại là **chưa rõ** |
@@ -355,15 +358,121 @@ Developing và Confirmed dùng cùng các điều kiện với Accumulation (h�
 
 Trên thẻ giai đoạn, Market State và cấu trúc hiện tách riêng. Khi đang trong Re-accumulation, Market State vẫn là Markup.
 
-**Số đo khám phá (cache H8, 311 mã, từ 2018):** 365 trên 7.765 range được xét Re-accumulation (4,7%; placebo 392 trên 8.413, 4,7%). Trong đó 43,8% từng Confirmed (41,8%), 70,1% cuối cùng bị bác bỏ (67,6%). Sau Confirmed, lợi suất 60 phiên +11,1% (placebo +1,8%, n = 160 và 164), close dưới support trong 60 phiên 22,5% (20,5%). Chênh lệch lợi suất lớn hơn các nhãn khác nhưng mẫu nhỏ, chưa kiểm soát xu hướng chung của thị trường và các ca trùng thời điểm, nên chưa phải bằng chứng về lợi thế. "Nghiêng về" được tính đến cuối thời gian xét, có thể gồm cả phần sau breakout, nên chưa đo được khả năng dự báo hướng thoát.
+**Số đo khám phá (cache H8, 311 mã, từ 2018):** 2.345 trên 7.765 range được xét Re-accumulation (30,2%; placebo 2.721 trên 8.413, 32,3%). Trong đó 1.041 từng Confirmed (44,4%; placebo 1.035, 38,0%). Lợi suất 60 phiên sau Confirmed +8,6% (placebo +3,8%). Chưa kiểm soát xu hướng chung của thị trường và các ca trùng thời điểm, nên chưa phải bằng chứng về lợi thế. "Nghiêng về" được tính đến cuối thời gian xét, có thể gồm cả phần sau breakout, nên chưa đo được khả năng dự báo hướng thoát.
 
-**Chưa làm:** pha A chưa dùng BC làm mốc mà bắt đầu từ đầu range. Markup sau Re-accumulation vẫn tính là đoạn mới nên có thể hiện Early Markup, chưa nối với xu hướng trước. "Nghiêng về Distribution" chỉ là ghi chú, chưa có nhãn Distribution theo định nghĩa mới.
+**Chưa làm:** pha A chưa dùng BC làm mốc mà bắt đầu từ đầu range. Markup sau Re-accumulation vẫn tính là đoạn mới nên có thể hiện Early Markup, chưa nối với xu hướng trước. Phân xử với Distribution: xem mục Distribution.
 
-## Distribution (chưa định nghĩa lại)
+## Distribution
 
-**Hiện tại:** range thoát xuống được gán Initial Distribution (trước đó là Markup) hoặc Re-distribution (trước đó là Markdown). Trên biểu đồ, nhãn có "?" khi Markdown sau đó còn tiềm năng và trở về "TR ?" khi Markdown bị bác bỏ.
+Distribution là quá trình thị trường chuyển từ trạng thái cầu chiếm ưu thế sang cung chiếm ưu thế, thường xuất hiện sau một xu hướng Markup. Trong giai đoạn này, các nhà đầu tư lớn có thể phân phối lượng cổ phiếu đang nắm giữ cho lực cầu còn lại, khiến giá hình thành Trading Range trước khi có khả năng chuyển sang Markdown.
 
-Sự kiện liên quan: BC, AR(d), ST(d), UT, UTAD, SOW, LPSY.
+**Điểm cốt lõi:** Distribution không đơn thuần là giá đi ngang ở vùng đỉnh. Nó phải thể hiện sự suy yếu của lực cầu, sự gia tăng tương đối của nguồn cung và quá trình chuyển giao quyền kiểm soát từ bên mua sang bên bán. Điều quan trọng nhất là phát hiện thời điểm cán cân cung cầu bắt đầu thay đổi, thay vì chờ đủ UTAD, SOW và LPSY.
+
+Không dùng chuỗi cứng `PSY → BC → AR → ST → UTAD → SOW → LPSY → Markdown`. Thay vào đó đánh giá độc lập: Prior Trend, Trading Range, Supply Analysis, Demand Analysis, Structural Weakness, Breakdown Confirmation.
+
+### Điều kiện nhận diện
+
+| Tiêu chí | Điều kiện |
+|---|---|
+| Prior Trend | Trước đó đã có Markup hoặc xu hướng tăng kéo dài |
+| Trading Range | Giá bắt đầu mất đà tăng và hình thành vùng giao dịch đi ngang |
+| Buying Exhaustion | Các nhịp tăng khó tạo đỉnh mới, hoặc breakout không duy trì được |
+| Supply Emergence | Xuất hiện các phiên giảm spread rộng, volume tăng, thể hiện áp lực bán |
+| Weak Demand | Các nhịp hồi có spread hẹp, volume thấp, lực cầu suy yếu |
+| Structural Weakness | Giá bắt đầu hình thành Lower High (LH), không giữ được các vùng hỗ trợ quan trọng |
+
+### Các pha
+
+Không phải mọi cấu trúc Distribution đều có đầy đủ năm pha hoặc các sự kiện dưới đây.
+
+| Pha | Đặc điểm | Sự kiện thường gặp |
+|---|---|---|
+| A, Stopping Action | Dừng xu hướng tăng trước đó | PSY, BC, AR, ST |
+| B, Building Cause | Phân phối cổ phiếu trong Trading Range | ST, các nhịp kiểm tra cung cầu |
+| C, Testing Demand | Kiểm tra lực cầu còn lại | UT hoặc UTAD |
+| D, Supply Dominance | Cung bắt đầu chiếm ưu thế | SOW, LPSY |
+| E, Markdown | Giá thoát khỏi Trading Range theo hướng giảm | Breakdown, LH, LL |
+
+### Các sự kiện
+
+| Sự kiện | Định nghĩa | Bắt buộc? |
+|---|---|---|
+| PSY | Preliminary Supply: dấu hiệu nguồn cung bắt đầu xuất hiện | Không |
+| BC | Buying Climax: cao trào mua, lực cầu đạt mức cực đoan | Không |
+| AR | Automatic Reaction: phản ứng giảm tự nhiên sau BC | Không |
+| ST | Secondary Test: kiểm tra lại vùng đỉnh và lực cầu | Không |
+| UT | Upthrust: giá vượt kháng cự nhưng không duy trì được | Không |
+| UTAD | Upthrust After Distribution: cú vượt đỉnh giả ở cuối quá trình phân phối | Không |
+| SOW | Sign of Weakness: dấu hiệu suy yếu của giá và lực cầu | Không bắt buộc về hình thái |
+| LPSY | Last Point of Supply: nhịp hồi yếu trước khi Markdown tiếp diễn | Không |
+
+UTAD thuộc pha C trong cấu trúc Distribution cổ điển, không phải điều kiện bắt buộc để xác nhận Distribution. Tuy nhiên, để xác nhận Distribution, phải có bằng chứng về sự suy yếu của cầu và sự gia tăng tương đối của cung.
+
+### Phân biệt với Re-accumulation
+
+Đây là bài toán quan trọng nhất khi cổ phiếu đã trải qua Markup và bắt đầu hình thành Trading Range. Không dùng riêng volume để phân biệt; cần kết hợp với spread, vị trí đóng cửa, kết quả vận động giá và phản ứng ở các vùng hỗ trợ, kháng cự.
+
+| Tiêu chí | Distribution | Re-accumulation |
+|---|---|---|
+| Xu hướng trước đó | Markup | Markup |
+| Cán cân cung cầu | Cung dần chiếm ưu thế | Cầu duy trì ưu thế |
+| Nhịp tăng | Yếu dần, khó vượt đỉnh | Có lực cầu tốt |
+| Nhịp giảm | Spread mở rộng, volume tăng | Thường thu hẹp, volume giảm |
+| Kiểm tra kháng cự | Thất bại, có thể xuất hiện UTAD | Có thể breakout thành công |
+| Kiểm tra hỗ trợ | Dễ bị phá vỡ | Thường được bảo vệ |
+| Cấu trúc giá | LH, sau đó có thể LL | HL được duy trì |
+| Kết quả | Markdown | Tiếp tục Markup |
+
+### Ba mức
+
+| Mức | Điều kiện | Trên biểu đồ |
+|---|---|---|
+| **Candidate** | Xu hướng trước đó là Markup; giá bắt đầu hình thành Trading Range; đà tăng suy yếu; xuất hiện dấu hiệu cung gia tăng | `Dist?` trong đoạn range |
+| **Developing** | Trading Range được duy trì; các nhịp tăng ngày càng yếu; xuất hiện dấu hiệu Supply Dominance; giá bắt đầu thất bại khi kiểm tra vùng kháng cự; có thể xuất hiện UT, UTAD hoặc SOW | `Distribution?`, nhạt |
+| **Confirmed** | Có bằng chứng rõ ràng cung chiếm ưu thế; giá phá vỡ vùng hỗ trợ quan trọng; breakdown có sự xác nhận của volume và price spread; giá hình thành LH–LL hoặc tiếp tục duy trì cấu trúc giảm | `Distribution`, đậm |
+
+**Distribution Confirmed không đồng nghĩa Markdown đã được xác nhận hoàn toàn.** Cần tiếp tục quan sát hành vi giá sau breakdown; Markdown có 5 điều kiện riêng ở trên.
+
+### Cách đo trong hệ thống
+
+Ngưỡng dùng chung với `DistributionConfig` và `RevisionConfig`, mã nguồn `_distribution_verdicts` trong `wyckoff/revision.py`. "Gần đây" là tối đa 20 phiên, không tính trước đầu range.
+
+| Điều kiện | Cách đo |
+|---|---|
+| Xu hướng tăng trước đó | Cùng điều kiện với Re-accumulation (`_prior_markup`): đã có HH–HL ngay từ đầu range, hoặc close đầu range cao hơn đáy 120 phiên trước từ 30% và trước range không phải Markdown. Mốc 30% đổi được bằng `prior_up_min_rise` |
+| Đà tăng suy yếu | Phiên tăng gần đây có volume hoặc biên độ không cao hơn 20 phiên trước range; 10 phiên gần nhất không close trên resistance + 0,5 ATR |
+| Cung xuất hiện | Có phiên giảm volume từ 1,5 lần và biên độ từ 1,2 ATR trong range |
+| Trading Range được duy trì | Range còn hoạt động |
+| Nhịp tăng yếu dần | Phiên tăng gần đây có volume hoặc biên độ thấp hơn phiên giảm |
+| Cung chiếm ưu thế | Phiên giảm gần đây có volume cao hơn và biên độ không thấp hơn phiên tăng |
+| Thất bại ở kháng cự | Có UT, UTAD, hoặc đỉnh swing trong range thấp hơn đỉnh trước |
+| Phá hỗ trợ | Range thoát xuống |
+| Breakdown có volume và spread | Từ close đầu tiên dưới support: có phiên giảm volume từ 1,5 lần và biên độ từ 1,2 ATR, hoặc có SOW |
+| LH–LL | Đỉnh swing trong range thấp hơn đỉnh trước, và close dưới support hoặc đáy swing thấp hơn đáy trước |
+
+**Bác bỏ:** Re-accumulation của range xác nhận trước; breakout giữ được 10 phiên (không phải đỉnh giả); range mới xác nhận khi chưa đủ bằng chứng; sau Confirmed, trong 60 phiên, close vượt lại resistance.
+
+**Phân xử với Re-accumulation trên cùng range:** mỗi range sau xu hướng tăng được xét song song hai giả thuyết. Mức cao hơn là cấu trúc đại diện; cùng mức thì theo hướng nghiêng; cùng mức mà chưa rõ thì ghi "chưa phân định". Re-accumulation mới ở mức Candidate, chưa có bằng chứng cung cầu, cũng ghi "chưa phân định": Market State chưa được xem là Markup. Distribution xác nhận trước thì Re-accumulation bị bác bỏ, và ngược lại. Thẻ giai đoạn liệt kê bằng chứng của cả hai.
+
+**Dải pha:** range có đại diện là Distribution vẽ A từ BC nếu có (không thì đầu range), B từ khi TR xác nhận, C từ UT/UTAD, D từ SOW hoặc từ khi đạt Developing, E khi breakdown đã xác nhận.
+
+**Redistribution:** chưa được định nghĩa. Range sau Markdown thoát xuống vẫn hiện `Re-dist` theo hướng thoát.
+
+### Số đo khám phá của Distribution
+
+Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫu cũ, không phải kiểm định.
+
+| Chỉ số | Thật | Placebo |
+|---|---|---|
+| Range được xét Distribution | 2.096 trên 7.765 (27,0%) | 2.559 trên 8.413 (30,4%) |
+| Từng Confirmed | 819 (39,1%) | 989 (38,6%) |
+| Lợi suất 60 phiên sau Confirmed | +2,8% | +3,4% |
+| Đại diện là Distribution | 721 | 763 |
+| Đại diện là Re-accumulation | 755 | 806 |
+
+Lợi suất sau Confirmed vẫn dương và không thấp hơn placebo một cách rõ ràng, nên nhãn này chưa cho thấy giá giảm tiếp. Sau khi dùng chung điều kiện "Markup trước đó", số range đại diện của hai bên đã cân bằng (trước đó là 1.172 so với 105). Cấu trúc đại diện khớp với hướng thoát khoảng 99% trên cả dữ liệu thật và placebo, vì mức Confirmed của hai bên dựa vào chính hướng thoát: đây là phân loại sau khi đã biết kết quả, không phải dự báo.
+
+Đã so hai cách đặt điều kiện: chỉ cần HH–HL (5,2% số range được xét, placebo 5,3%) và HH–HL hoặc tăng từ 30% (31,7%, placebo 34,2%). Chọn cách sau vì khớp với "Markup hoặc xu hướng tăng kéo dài" và xét được nhiều range hơn. Với cách này, Re-accumulation không còn đòi hỏi HH–HL trong mọi trường hợp.
 
 ## Chưa có xu hướng
 

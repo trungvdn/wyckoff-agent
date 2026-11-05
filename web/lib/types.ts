@@ -50,7 +50,7 @@ export interface PhaseSegment {
 }
 
 export interface StageSegment {
-  kind: "up" | "down" | "up_potential" | "down_potential" | "range" | "accumulation" | "accumulation_developing" | "reaccumulation" | "reaccumulation_developing" | "none";
+  kind: "up" | "down" | "up_potential" | "down_potential" | "range" | "accumulation" | "accumulation_developing" | "reaccumulation" | "reaccumulation_developing" | "distribution" | "distribution_developing" | "none";
   label: string;
   i0: number;
   i1: number;
@@ -105,6 +105,7 @@ export interface StageInfo {
     supporting: string[]; // sự kiện làm bằng chứng, không bắt buộc
     leaning: string | null; // range sau Markup: nghiêng về Re-accumulation hay Distribution
   } | null; // mức Accumulation / Re-accumulation của range hiện tại
+  distribution: StageInfo["accumulation"]; // mức Distribution của range hiện tại, xét song song với Re-accumulation
   market: { state: string | null; structure: string | null; leaning: string | null }; // Market State tách khỏi Market Structure
   structure_type: string;
   strength: TrendStrength | null;

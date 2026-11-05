@@ -57,7 +57,8 @@ Sự kiện trong revision.events và trường assessment chỉ ghi nhận, kh�
 SC có assessment potential chỉ là ứng viên, KHÔNG gọi là SC đã xác nhận; rejected: nói rõ không còn được xem là SC. \
 revision.accumulation (hoặc revised_type trong stage_history) là mức Accumulation của range: potential là ứng viên, developing là đang hình thành, confirmed là đã xác nhận; nhãn này thay cho nhãn theo hướng thoát, chỉ mô tả, không phải dự báo. Sự kiện trong supporting chỉ là bằng chứng, KHÔNG nói là điều kiện bắt buộc. \
 revision.market tách Market State (state) khỏi Market Structure (structure): Re-accumulation là cấu trúc nằm trong trạng thái Markup, KHÔNG phải xu hướng riêng. \
-Với range sau Markup, revision.accumulation.leaning cho biết đang nghiêng về Re-accumulation hay Distribution; KHÔNG kết luận Re-accumulation chỉ vì giá còn trên đáy xu hướng trước.
+Với range sau Markup, revision.accumulation.leaning cho biết đang nghiêng về Re-accumulation hay Distribution; KHÔNG kết luận Re-accumulation chỉ vì giá còn trên đáy xu hướng trước. \
+revision.distribution là mức Distribution của range: potential, developing, confirmed; confirmed KHÔNG đồng nghĩa Markdown đã xác nhận; UT, UTAD, SOW, BC trong supporting chỉ là bằng chứng, KHÔNG bắt buộc.
    - Markup / Markdown có current_stage.strength: diễn giải sức mạnh cung cầu theo headline và các tín hiệu trong đó, KHÔNG đổi mức. \
 Đây là mô tả hiện trạng theo quy tắc, chưa kiểm định bằng backtest, không phải dự báo.
    - current_phase và điểm tin cậy theo sơ đồ tích lũy. Đang trong range thì current_stage.distribution_phase là pha theo sơ đồ phân phối, \

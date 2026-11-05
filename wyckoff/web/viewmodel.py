@@ -106,12 +106,12 @@ def stage_segments(result: AnalysisResult) -> list[dict[str, Any]]:
             status = h.status if h is not None else None
             short = STAGE_SHORT.get(name, "TR ?") if status != REJECTED else "TR ?"
             # Nhãn tích lũy chỉ lấy từ mức Accumulation của range, không suy từ hướng thoát
-            verdict = result.revision.range_verdicts.get(g.range_id)
-            if short in ("Acc", "Re-acc"):
+            verdict = result.revision.primary_of(g.range_id)[0]
+            if short in ("Acc", "Re-acc", "Dist"):
                 short = "TR ?"
             kind, label = "range", f"{short}?" if status == POTENTIAL and short != "TR ?" else short
             if verdict is not None and verdict.status == POTENTIAL:
-                label = "Re-acc?" if verdict.is_reaccumulation else "Acc?"
+                label = "Dist?" if verdict.is_distribution else "Re-acc?" if verdict.is_reaccumulation else "Acc?"
         elif g.stage in TREND_STAGES:
             h = hyp_by_start.get(g.start_idx)
             status = h.status if h is not None else CONFIRMED
@@ -126,13 +126,15 @@ def stage_segments(result: AnalysisResult) -> list[dict[str, Any]]:
             kind, label = "none", ""
         out.append({"kind": kind, "label": label, "i0": g.start_idx, "i1": g.end_idx})
     # Range đã xác nhận hoặc đang hình thành Accumulation: một đoạn liền từ đầu range đến trước Markup, đè lên các đoạn cũ
-    for rid in sorted(result.revision.range_verdicts):
-        v = result.revision.range_verdicts[rid]
-        name = "reaccumulation" if v.is_reaccumulation else "accumulation"
+    for rid in sorted(set(result.revision.range_verdicts) | set(result.revision.distribution_verdicts)):
+        v = result.revision.primary_of(rid)[0]
+        if v is None:
+            continue
+        name = "distribution" if v.is_distribution else "reaccumulation" if v.is_reaccumulation else "accumulation"
         if v.status == CONFIRMED:
             out = _overlay_segment(out, {"kind": name, "label": v.structure_type, "i0": v.start_idx, "i1": v.end_idx})
         elif v.status == DEVELOPING:
-            out = _overlay_segment(out, {"kind": f"{name}_developing", "label": "Re-accumulation?" if v.is_reaccumulation else "Accumulation?", "i0": v.start_idx, "i1": v.end_idx})
+            out = _overlay_segment(out, {"kind": f"{name}_developing", "label": f"{v.structure_type.replace('Initial ', '')}?", "i0": v.start_idx, "i1": v.end_idx})
     return out
 
 
@@ -254,6 +256,7 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
         target_down = {**target_down, "reached": close <= target_down["conservative"]}
     stage = stage_view(payload["current_stage"], payload["stage_history"], revision["trend"])
     stage["accumulation"] = revision["accumulation"]
+    stage["distribution"] = revision["distribution"]
     stage["market"] = revision["market"]
     phase_info = phase_view(revision["phase"]["phase"])
     if revision["phase"]["phase"] is None and stage["view"] == "range":

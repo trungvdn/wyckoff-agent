@@ -251,6 +251,7 @@ revision:                    # đánh giá lại tiềm năng / xác nhận / b�
   lps_supply_spread_atr: 1.5 #   ... và biên độ >= 1,5 ATR: cung còn mạnh, không phải LPS
   lps_min_value_bn: 1.0      #   thanh khoản: giá trị giao dịch TB20 >= 1 tỷ đồng
   lps_internal_strength: true  #   tính cả SOS nội bộ trong range làm nền cho LPS
+  prior_up_min_rise: 0.30    # Markup trước đó (Re-accumulation, Distribution): có HH-HL, hoặc tăng từ 30% so với đáy trước range
   acc_window: 20             # Accumulation (docs/stage-definitions.md): so sánh cung cầu trên 20 phiên gần nhất
   acc_absorb_vol_ratio: 1.5  #   hấp thụ cung: volume >= 1,5x TB20 ở nửa dưới range, giá không giảm tương ứng
   acc_hold_bars: 10          #   giữ hỗ trợ: tối thiểu 10 phiên sau breakout

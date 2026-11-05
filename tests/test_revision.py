@@ -333,7 +333,10 @@ def test_range_after_clear_markup_is_reaccumulation_structure_not_trend() -> Non
     assert v is not None and v.status in (POTENTIAL, DEVELOPING) and v.leaning is not None
     assert {c.key: c.met for c in v.conditions}["structure"]
     market = res.revision.market_view(res.current_stage().range_id, res.current_stage().range_id is not None, res.df.index[-1])
-    assert market["state"] == "Markup" and "Re-accumulation" in market["structure"]    # trạng thái vẫn là Markup
+    if v.status == DEVELOPING or v.leaning == "Re-accumulation":
+        assert market["state"] == "Markup" and "Re-accumulation" in market["structure"]    # trạng thái vẫn là Markup
+    else:
+        assert market["state"] is None and "chưa phân định" in market["structure"]         # chưa có bằng chứng cung cầu
 
 
 def test_markup_then_range_is_not_automatically_reaccumulation() -> None:
@@ -372,9 +375,139 @@ def test_view_marks_reaccumulation_segment_and_market() -> None:
     df, _, _ = _reacc_frame()
     res = analyze(df, _cfg())
     view = build_view(res, build_payload(res, "X"), "X", "1D")
-    assert view["stage"]["market"]["state"] == "Markup"
+    assert view["stage"]["market"]["state"] in (None, "Markup")
     assert view["stage"]["accumulation"]["structure_type"] == "Re-accumulation"
     assert any("Re-acc" in s["label"] for s in view["stage_segments"])
+
+
+def _dist_frame(after: list[float] | None = None, after_vols: dict[int, float] | None = None) -> tuple[pd.DataFrame, float, float]:
+    """Markup, rồi range ở đỉnh với nhịp tăng yếu, nhịp giảm mạnh và đỉnh thấp dần, rồi `after`."""
+    base = DECLINE + _range_closes()
+    up, mult = _uptrend(legs=5)
+    top = up[-1]
+    side: list[float] = []
+    vols: list[float] = []
+    # Ba sóng trong range, đỉnh thấp dần: phiên giảm volume cao, phiên tăng volume thấp
+    for peak in (top, top - 0.1, top - 0.2, top - 0.3):
+        for k in range(8):
+            side.append(peak - 0.15 * (k + 1))
+            vols.append(2.2)
+        for k in range(8):
+            side.append(peak - 1.2 + (1.1 * (k + 1) / 8))
+            vols.append(0.6)
+    low = top - 1.5
+    overrides = {len(base) + i: m for i, m in enumerate(mult)}
+    overrides.update({len(base) + len(up) + i: m for i, m in enumerate(vols)})
+    closes = base + up + side + (after or [])
+    start_side = len(base) + len(up)
+    start_after = start_side + len(side)
+    for i, m in (after_vols or {}).items():
+        overrides[start_after + i] = m
+    df = _frame(closes, overrides=overrides)
+    # Phiên giảm trong range có biên độ rộng hơn phiên tăng
+    pos_high, pos_low = df.columns.get_loc("high"), df.columns.get_loc("low")
+    for i in range(start_side, start_after):
+        if closes[i] < closes[i - 1]:
+            df.iloc[i, pos_high] += 0.12
+            df.iloc[i, pos_low] -= 0.12
+    return df, low, top
+
+
+def _dist_verdict(res):
+    return next((v for v in res.revision.distribution_verdicts.values()), None)
+
+
+def test_distribution_candidate_and_developing_inside_range() -> None:
+    df, _, _ = _dist_frame()
+    res = analyze(df, _cfg())
+    v = _dist_verdict(res)
+    assert v is not None and v.status in (POTENTIAL, DEVELOPING) and v.is_distribution
+    met = {c.key: c.met for c in v.conditions}
+    assert met["supply_emerging"] and not met["breakdown"]
+
+
+def test_distribution_confirmed_on_backed_breakdown_without_utad() -> None:
+    """Không cần UTAD, BC: phá hỗ trợ có volume và spread xác nhận, cấu trúc LH-LL."""
+    _, low0, _ = _dist_frame()
+    drop = [low0 - 0.3, low0 - 0.8, low0 - 1.3, low0 - 1.8, low0 - 2.2, low0 - 2.5, low0 - 2.8]
+    df, _, _ = _dist_frame(after=drop, after_vols={0: 2.5, 1: 2.5, 2: 2.5})
+    res = analyze(df, _cfg())
+    v = _dist_verdict(res)
+    assert v is not None and CONFIRMED in [x.status for x in v.history] and v.leaning == "Distribution"
+    assert not [s for s in v.supporting if s.startswith("UTAD")]
+    reacc = _reacc_verdict(res)
+    assert reacc is None or reacc.status == REJECTED
+    assert any(s["kind"] in ("distribution", "distribution_developing") for s in _view_segments(res))
+
+
+def _view_segments(res) -> list[dict]:
+    from wyckoff.web.viewmodel import stage_segments
+
+    return stage_segments(res)
+
+
+def test_distribution_rejected_when_breakout_holds() -> None:
+    """Thoát lên và giữ được: không phải đỉnh giả, Distribution bị bác bỏ."""
+    _, _, top = _dist_frame()
+    tail = [top + 0.5 + 0.2 * i for i in range(20)]
+    df, _, _ = _dist_frame(after=tail, after_vols={i: 1.8 for i in range(20)})
+    res = analyze(df, _cfg())
+    v = _dist_verdict(res)
+    assert v is not None and v.status == REJECTED
+
+
+def test_reaccumulation_and_distribution_share_prior_markup_condition() -> None:
+    """Cùng một range: hoặc được xét cả hai giả thuyết, hoặc không giả thuyết nào, tùy một điều kiện chung."""
+    from wyckoff.revision import _prior_markup
+
+    df, _, _ = _reacc_frame()
+    res = analyze(df, _cfg())
+    close = res.df["close"].to_numpy(dtype=float)
+    prior = {x.range_id: x.prior_stage for x in res.stages.ranges}
+    for g in res.ranges:
+        ok = _prior_markup(g, close, res.revision.hypotheses, prior.get(g.range_id), res.cfg)[0]
+        main = res.revision.range_verdicts.get(g.range_id)
+        assert not (main is not None and main.is_reaccumulation) or ok
+        assert g.range_id not in res.revision.distribution_verdicts or ok
+
+
+def test_prior_rise_counts_but_not_after_markdown() -> None:
+    from wyckoff.revision import _prior_markup
+
+    df, _, _ = _reacc_frame()
+    cfg = _cfg()
+    res = analyze(df, replace(cfg, ranges=replace(cfg.ranges, context_lookback=120)))
+    close = res.df["close"].to_numpy(dtype=float)
+    rng = res.ranges[-1]
+    no_hyps: list = []
+    assert _prior_markup(rng, close, no_hyps, None, res.cfg)[0] is True           # tăng kéo dài từ đáy
+    assert _prior_markup(rng, close, no_hyps, "Markdown", res.cfg)[0] is False    # trước range là Markdown thì không tính
+
+
+def test_candidate_without_supply_demand_evidence_is_undecided() -> None:
+    from wyckoff.revision import RangeVerdict, Verdict, _primary_verdict
+
+    ts = pd.Timestamp("2024-01-01")
+    only = RangeVerdict(1, "Re-accumulation", 0, 1, (Verdict(POTENTIAL, 0, ts),), leaning="chưa rõ")
+    assert _primary_verdict(only, None)[1] is False
+    assert _primary_verdict(replace(only, leaning="Re-accumulation"), None)[1] is True
+
+
+def test_primary_verdict_resolves_reaccumulation_vs_distribution() -> None:
+    from wyckoff.revision import RangeVerdict, Verdict, _primary_verdict
+
+    ts = pd.Timestamp("2024-01-01")
+    def mk(typ: str, status: str, lean: str) -> RangeVerdict:
+        return RangeVerdict(1, typ, 0, 1, (Verdict(status, 0, ts),), leaning=lean)
+
+    # Mức cao hơn thắng
+    assert _primary_verdict(mk("Re-accumulation", DEVELOPING, "chưa rõ"), mk("Distribution", POTENTIAL, "chưa rõ"))[0].is_reaccumulation
+    # Cùng mức: theo hướng nghiêng
+    assert _primary_verdict(mk("Re-accumulation", POTENTIAL, "chưa rõ"), mk("Distribution", POTENTIAL, "Distribution"))[0].is_distribution
+    # Cùng mức, chưa rõ: chưa phân định
+    assert _primary_verdict(mk("Re-accumulation", POTENTIAL, "chưa rõ"), mk("Distribution", POTENTIAL, "chưa rõ"))[1] is False
+    # Một bên bị bác bỏ thì bên còn lại là đại diện
+    assert _primary_verdict(mk("Re-accumulation", REJECTED, "chưa rõ"), mk("Distribution", POTENTIAL, "chưa rõ"))[0].is_distribution
 
 
 def test_rejected_extended_spring_falls_back_to_potential() -> None:
@@ -691,6 +824,7 @@ def _scenarios() -> dict[str, tuple[pd.DataFrame, Config]]:
     df_sos, _ = _sos_then_pullback()
     df_acc, _ = _sos_then_pullback(prefix=DECLINE)
     return {
+        "dist": (_dist_frame(after=[28.0, 27.0, 26.0, 25.0, 24.5, 24.0, 23.5], after_vols={0: 2.5, 1: 2.5, 2: 2.5})[0], _cfg()),
         "reacc": (_reacc_frame(after=list(np.linspace(29.0, 22.0, 12)))[0], _cfg()),
         "markup": (_markup_frame(), _cfg()),
         "accumulation": (_append(df_acc, [24.0, 22.0, 20.0, 18.0, 17.0, 16.0]), _cfg()),
@@ -703,7 +837,7 @@ def _scenarios() -> dict[str, tuple[pd.DataFrame, Config]]:
     }
 
 
-@pytest.mark.parametrize("name", ["demo", "demo_close", "return", "sos", "downtrend", "climax", "accumulation", "markup", "reacc"])
+@pytest.mark.parametrize("name", ["demo", "demo_close", "return", "sos", "downtrend", "climax", "accumulation", "markup", "reacc", "dist"])
 def test_no_lookahead(name: str) -> None:
     """Trạng thái tại phiên t trên dữ liệu đầy đủ = trạng thái cuối khi chạy trên dữ liệu cắt tại t."""
     df, cfg = _scenarios()[name]
@@ -726,6 +860,9 @@ def test_no_lookahead(name: str) -> None:
         for rid, v in full.range_verdicts.items():
             got = cut.range_verdicts.get(rid)
             assert v.status_at(t) == (got.status if got is not None else None), (name, t, rid)
+        for rid, v in full.distribution_verdicts.items():
+            got = cut.distribution_verdicts.get(rid)
+            assert v.status_at(t) == (got.status if got is not None else None), (name, t, rid, "dist")
 
 
 def test_view_carries_status_and_revised_segments() -> None:

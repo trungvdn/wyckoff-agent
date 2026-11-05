@@ -209,7 +209,7 @@ export function PriceChart({ data: d }: { data: Analysis }) {
     ));
     const stageColor = {
       up: color("pos"), down: color("neg"), up_potential: color("pos"), down_potential: color("neg"),
-      range: color("event-dim"), accumulation: color("event"), accumulation_developing: color("event"), reaccumulation: color("pos"), reaccumulation_developing: color("pos"), none: color("pending"),
+      range: color("event-dim"), accumulation: color("event"), accumulation_developing: color("event"), reaccumulation: color("pos"), reaccumulation_developing: color("pos"), distribution: color("neg"), distribution_developing: color("neg"), none: color("pending"),
     };
     candles.attachPrimitive(new StageStrip(
       d.stage_segments.map((s) => ({ ...s, color: stageColor[s.kind], alpha: s.kind.endsWith("_potential") || s.kind.endsWith("_developing") ? POTENTIAL_STRIP_ALPHA : undefined })),
