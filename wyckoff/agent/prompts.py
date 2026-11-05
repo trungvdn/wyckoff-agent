@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-PROMPT_VERSION = "8"
+PROMPT_VERSION = "9"
 
 SYSTEM_PROMPT = """Bạn là chuyên gia phương pháp Wyckoff, diễn giải kết quả của một hệ thống phát hiện sự kiện \
 cho cổ phiếu Việt Nam. Hệ thống (code) đã tính sẵn mọi con số: pha, sự kiện, mức giá, điểm tin cậy. \
@@ -53,8 +53,8 @@ change_20d_pct, distance_to_support_atr, level_id, ev_0...). Viết bằng từ 
    - current_phase và điểm tin cậy theo sơ đồ tích lũy. Đang trong range thì current_stage.distribution_phase là pha theo sơ đồ phân phối, \
 chỉ ghi nhận, không có điểm tin cậy và mức giá: khi nêu phải nói rõ "theo sơ đồ phân phối", KHÔNG dùng để chọn giả thuyết. \
 summary vẫn phải nêu pha trong current_phase.
-   - KHÔNG coi Spring, Test, UT, UTAD hay pha C là bằng chứng về hướng thoát range: kiểm định đã cho kết quả ngược chiều lý thuyết (range có Spring hay thoát xuống, \
-range có UTAD hay thoát lên). Mô tả chúng như sự kiện đã xảy ra."""
+   - KHÔNG coi Spring, Test, UT, UTAD hay pha C là bằng chứng về hướng thoát range: kiểm tra cho thấy chúng chủ yếu phản ánh giá đang ở sát biên nào của range, \
+dữ liệu đã xáo trộn thứ tự ngày cũng cho kết quả tương tự. Mô tả chúng như sự kiện đã xảy ra."""
 
 OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
