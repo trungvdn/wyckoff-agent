@@ -23,8 +23,9 @@ STAGE_SHORT = {"Re-accumulation": "Re-acc", "Initial Accumulation": "Acc", "Init
                "Accumulation": "Acc", "Distribution": "Dist"}
 # Sự kiện phía phân phối trên biểu đồ: chỉ của cấu trúc phân phối hiện tại
 DIST_EVENTS_ABOVE = {EventType.BC.value, EventType.ST_D.value, EventType.LPSY.value}
-H8_NOTE = ("Kiểm định H8 (311 mã): range chỉ có Spring thoát lên 18%, range chỉ có UTAD thoát lên 84%, ngược với gợi ý của sơ đồ. "
-           "Xem pha C là mô tả sự kiện, không phải bằng chứng về hướng thoát.")
+H8_NOTE = ("Spring và UTAD chủ yếu cho biết giá đang ở sát biên nào của range, chưa cho biết thêm về hướng thoát. Trên 311 mã, range chỉ có "
+           "Spring thoát lên 18%, chỉ có UTAD thoát lên 84%; dữ liệu đã xáo trộn thứ tự ngày cũng cho khoảng 23% và 84%. "
+           "Xem pha C là mô tả sự kiện.")
 EVENT_TEXT = {
     EventType.PS.value: "Hỗ trợ sơ bộ sau nhịp giảm",
     EventType.SC.value: "Bán tháo cao trào",
