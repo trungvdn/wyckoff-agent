@@ -229,8 +229,10 @@ backtest:
   rate_limit_retries: 3
 
 revision:                    # đánh giá lại tiềm năng / xác nhận / bác bỏ: chỉ ghi nhận, không đổi pha / tin cậy / backtest
-  trend_confirm_bars: 10     # Markup: xác nhận sau tối thiểu 10 phiên ...
-  trend_confirm_atr: 3.0     #   ... và close cách mốc tham chiếu >= 3 ATR
+  mk_min_swings: 2           # Markup (docs/stage-definitions.md): HH-HL qua nhiều nhịp, tối thiểu 2 đỉnh và 2 đáy cao dần
+  mk_base_lookback: 60       #   xu hướng theo SMA: nền giá là range kết thúc trong 60 phiên trước
+  mk_extended_bars: 60       #   Extended Markup: từ 60 phiên sau breakout ...
+  mk_extended_atr: 1.5       #   ... hoặc ATR gấp 1,5 lần lúc breakout
   trend_watch_bars: 60       # Markdown / Markup: theo dõi bác bỏ 60 phiên sau xác nhận
   md_min_lower_highs: 1      # Markdown (5 điều kiện, docs/stage-definitions.md): số đỉnh thấp dần sau khi thủng hỗ trợ
   md_min_lower_lows: 2       #   số đáy thấp dần sau khi thủng hỗ trợ (đáy đầu tiên luôn thấp hơn hỗ trợ)

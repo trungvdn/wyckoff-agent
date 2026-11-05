@@ -6,7 +6,8 @@ Tài liệu này ghi điều kiện để hệ thống gọi tên một giai đo
 |---|---|
 | Markdown | Định nghĩa lại 05/11/2026 |
 | Accumulation | Định nghĩa lại 05/11/2026 |
-| Markup | Tạm thời, theo khoảng cách giá |
+| Markup | Định nghĩa lại 05/11/2026 |
+| Re-accumulation | Định nghĩa lại 05/11/2026; là cấu trúc trong Markup, không phải giai đoạn riêng |
 | Distribution | Chưa định nghĩa lại, theo hướng thoát range |
 
 ## Nguyên tắc chung
@@ -133,7 +134,7 @@ Ngưỡng trong `RevisionConfig`, mã nguồn `_range_verdicts` trong `wyckoff/r
 - Trước khi Confirmed: Markdown của range được xác nhận; thoát xuống và không quay lại trong 30 phiên; hoặc range mới đã xác nhận.
 - Sau khi Confirmed, trong 60 phiên: SOS làm căn cứ bị bác bỏ, hoặc close thủng đáy Spring còn hiệu lực (không có Spring thì thủng support). Một LPS thất bại không gỡ nhãn.
 
-**Nhãn:** Initial Accumulation khi trước range là Markdown theo nhật ký, Accumulation khi bối cảnh giảm đến từ SMA50 hoặc SC. Range sau Markup không được xem là Accumulation theo định nghĩa này; Re-accumulation chưa được định nghĩa lại.
+**Nhãn:** Initial Accumulation khi trước range là Markdown theo nhật ký, Accumulation khi bối cảnh giảm đến từ SMA50 hoặc SC. Range sau Markup đã rõ được xét là Re-accumulation (mục riêng bên dưới).
 
 **Trên biểu đồ hồi cứu:** Confirmed và Developing phủ một đoạn liền từ đầu range đến trước Markup. Range không đạt hoặc bị bác bỏ hiện `TR ?`. Thẻ giai đoạn liệt kê từng bằng chứng "Đạt" hoặc "Chưa", kèm sự kiện làm bằng chứng.
 
@@ -172,15 +173,191 @@ Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫ
 
 Các tỷ lệ gần như bằng placebo, nên định nghĩa này mô tả hành vi của quy tắc, chưa phân biệt được thị trường thật với dữ liệu xáo trộn, và Developing chưa cho thông tin về hướng thoát. Nhóm Confirmed có LPS cho lợi suất +11,9% (n = 95), nhưng placebo cũng +12,0% (n = 55), nên đó chủ yếu là hiệu ứng cơ học.
 
-## Markup (tạm thời)
+## Markup
 
-**Tiềm năng:** range thoát lên, hoặc 5 close liên tiếp trên SMA50 đang tăng.
+Markup là giai đoạn thị trường chuyển sang xu hướng tăng sau khi quá trình Accumulation hoặc Re-accumulation hoàn tất. Trong giai đoạn này, lực cầu chiếm ưu thế so với nguồn cung, khiến giá liên tục hình thành các đỉnh cao hơn (Higher High, HH) và đáy cao hơn (Higher Low, HL).
 
-**Xác nhận:** tối thiểu 10 phiên và close cách mốc tham chiếu từ 3 ATR trở lên. Mốc là resistance của range, hoặc SMA50 lúc vào xu hướng.
+**Điểm cốt lõi: Markup không chỉ là giá tăng, mà là một xu hướng tăng được duy trì bởi sự mất cân bằng cung cầu theo hướng có lợi cho bên mua.** Markup là một Market State, không phải một sự kiện đơn lẻ. Một vài phiên tăng mạnh không đủ để kết luận cổ phiếu đã bước vào Markup.
 
-**Bác bỏ:** close dưới support của range, hoặc dưới mốc SMA50. Từ range, close quay lại dưới resistance chưa phải bác bỏ, vì pullback sau breakout là bình thường (LPS).
+Không yêu cầu chuỗi `SOS → LPS → HH → HL → SOS → LPS`. Thay vào đó đánh giá liên tục:
 
-Định nghĩa này chỉ dựa vào khoảng cách giá, chưa đối xứng với Markdown.
+- **Trend Structure:** HH–HL.
+- **Demand/Supply:** tương quan cung cầu.
+- **Momentum:** sức mạnh và độ bền của các nhịp tăng.
+- **Support Integrity:** khả năng giữ các vùng hỗ trợ.
+- **Range Expansion:** khả năng mở rộng biên độ tăng.
+
+### Điều kiện nhận diện
+
+| Yếu tố | Nội dung |
+|---|---|
+| Prior Structure | Trước đó có Accumulation hoặc Re-accumulation, hoặc một nền giá đủ rõ ràng |
+| Breakout | Giá phá vỡ vùng kháng cự hoặc Trading Range với lực cầu đáng tin cậy |
+| Price Structure | Hình thành cấu trúc HH–HL liên tiếp |
+| Demand | Các nhịp tăng có spread mở rộng, volume cải thiện |
+| Supply Weakness | Các nhịp điều chỉnh thường có spread thu hẹp, volume suy giảm |
+| Trend Persistence | Giá duy trì trên các vùng hỗ trợ quan trọng và tiếp tục tạo đỉnh mới |
+
+### Sự kiện thường gặp
+
+| Sự kiện | Ý nghĩa | Bắt buộc? |
+|---|---|---|
+| SOS | Dấu hiệu sức mạnh của cầu | Không bắt buộc lặp lại |
+| LPS | Điểm hỗ trợ cuối cùng sau nhịp điều chỉnh | Không |
+| HH | Đỉnh cao hơn đỉnh trước | Đặc trưng của xu hướng tăng |
+| HL | Đáy cao hơn đáy trước | Đặc trưng của xu hướng tăng |
+| BU / BUEC | Back-up sau khi vượt kháng cự | Không |
+| Re-accumulation | Tích lũy lại trong xu hướng tăng | Không |
+
+### Trạng thái vận động
+
+Đây là cách phân loại để phân tích, không phải bốn pha A–D chính thức của Wyckoff.
+
+| Trạng thái | Nội dung | Cách đo |
+|---|---|---|
+| Early Markup | Giá breakout khỏi vùng tích lũy, xác lập xu hướng tăng mới | Đã breakout, chưa Confirmed |
+| Established Markup | Giá duy trì HH–HL, cầu chiếm ưu thế | Đã Confirmed |
+| Extended Markup | Xu hướng tăng kéo dài, biên độ có thể mở rộng, biến động mạnh hơn | Đã Confirmed, từ 60 phiên sau breakout, hoặc ATR gấp 1,5 lần lúc breakout |
+| Markup Weakening | Đà tăng suy yếu, cung gia tăng, cấu trúc có nguy cơ bị phá vỡ | Từ Developing trở lên, và có đỉnh thấp hơn đỉnh trước, hoặc close dưới đáy swing gần nhất, hoặc phiên giảm có volume và biên độ cao hơn phiên tăng |
+
+### Phân biệt với nhịp hồi trong Markdown
+
+| Markup | Nhịp hồi phục trong Markdown |
+|---|---|
+| Phá vỡ cấu trúc kháng cự quan trọng | Chưa vượt được đỉnh cấu trúc |
+| Hình thành HH–HL | Có thể vẫn hình thành LH |
+| Cầu duy trì ưu thế | Cầu chỉ xuất hiện tạm thời |
+| Điều chỉnh thường giữ được HL | Giá có thể tiếp tục tạo LL |
+| Xu hướng tăng được duy trì | Giá có nguy cơ tiếp tục giảm |
+
+### Ba mức
+
+| Mức | Điều kiện | Trên biểu đồ |
+|---|---|---|
+| **Candidate** | Giá breakout khỏi Trading Range; có dấu hiệu Demand Expansion; giá bắt đầu phá cấu trúc Lower High trước đó | `Markup?`, nhạt |
+| **Developing** | Breakout được duy trì; hình thành HH–HL; các nhịp điều chỉnh có dấu hiệu suy yếu về cung | `Markup?`, nhạt |
+| **Confirmed** | Xu hướng HH–HL được xác lập qua nhiều nhịp vận động; các vùng hỗ trợ cấu trúc được giữ; lực cầu tiếp tục chiếm ưu thế | `Markup`, đậm |
+
+### Cách đo trong hệ thống
+
+Ngưỡng trong `RevisionConfig`, mã nguồn `_MarkupTest` trong `wyckoff/revision.py`. Volume tính theo tỷ lệ TB20, biên độ theo ATR. "Gần đây" là tối đa 20 phiên, không tính trước breakout.
+
+| Điều kiện | Cách đo |
+|---|---|
+| Có nền giá | Range vừa thoát lên; với xu hướng theo SMA50 là range đã xác nhận, kết thúc trong 60 phiên trước. Không có thì không xác nhận được |
+| Phá vỡ kháng cự | Có close trên resistance của nền kể từ khi range kết thúc, và hiện không sâu quá 3% dưới resistance |
+| Cầu mở rộng | Phiên tăng gần đây có volume và biên độ không thấp hơn phiên giảm; rất ít phiên giảm cũng được tính |
+| Phá đỉnh cấu trúc | Close vượt đỉnh swing gần nhất trước breakout |
+| Breakout được duy trì | Từ breakout đến nay, close không sâu quá 3% dưới resistance |
+| HH–HL | Tính từ pivot mới nhất ngược lại: tối thiểu 1 đỉnh và 1 đáy cao dần liên tiếp sau breakout |
+| Điều chỉnh yếu về cung | Phiên giảm gần đây có volume và biên độ không cao hơn phiên tăng |
+| HH–HL qua nhiều nhịp | Tối thiểu 2 đỉnh và 2 đáy cao dần liên tiếp |
+| Giữ hỗ trợ cấu trúc | Close không dưới đáy swing gần nhất sau breakout, và không sâu quá 3% dưới resistance |
+| Cầu chiếm ưu thế | Volume phiên tăng gần đây cao hơn phiên giảm |
+
+Xu hướng bắt đầu ở mức tiềm năng khi range thoát lên, hoặc khi có 5 close liên tiếp trên SMA50 đang tăng. Thẻ giai đoạn liệt kê từng điều kiện và trạng thái vận động; SOS và LPS chỉ hiện như sự kiện hỗ trợ.
+
+**Bác bỏ:** close dưới support của range, hoặc dưới mốc SMA50 lúc vào xu hướng; sau khi Confirmed thì xét trong 60 phiên. Close quay lại dưới resistance chưa phải bác bỏ, vì pullback sau breakout là bình thường. Tạo đỉnh thấp hơn chỉ chuyển sang Markup Weakening, chưa phải bác bỏ.
+
+**Chưa đo:** Momentum và Range Expansion chỉ phản ánh gián tiếp qua volume, biên độ và trạng thái Extended. BU / BUEC chưa có bộ phát hiện.
+
+### Số đo khám phá của Markup
+
+Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫu cũ, không phải kiểm định.
+
+| Chỉ số, Markup từ range | Thật (4.131) | Placebo (4.572) |
+|---|---|---|
+| Từng Developing | 54,3% | 47,9% |
+| Từng Confirmed | 13,3% | 14,2% |
+| Độ trễ xác nhận trung vị | 37 phiên | 36 phiên |
+| Lợi suất 60 phiên sau Confirmed | +7,2% | +3,8% |
+| Close dưới resistance trong 60 phiên sau Confirmed | 19,3% | 22,6% |
+
+Quy tắc trước đó (10 phiên + 3 ATR) xác nhận 55,1% với lợi suất 60 phiên +7,1% (placebo 57,9%, +3,7%). Định nghĩa này chọn lọc hơn nhiều nhưng lợi suất gần như không đổi, và tỷ lệ xác nhận gần bằng placebo. Một xu hướng tăng thẳng, không có nhịp điều chỉnh, không tạo được đỉnh và đáy swing nên chỉ dừng ở tiềm năng.
+
+## Re-accumulation
+
+Re-accumulation là quá trình thị trường tạm dừng xu hướng Markup để hình thành một Trading Range mới, trong đó nguồn cung được hấp thụ và lực cầu tiếp tục duy trì ưu thế. Sau khi quá trình này hoàn tất, giá có khả năng tiếp tục xu hướng tăng (Markup).
+
+**Khác biệt:** Accumulation xuất hiện sau Markdown, còn Re-accumulation xuất hiện trong một xu hướng tăng đã được hình thành.
+
+**Đây là cấu trúc, không phải trạng thái.** Re-accumulation là Market Structure nằm bên trong Market State Markup, không phải một xu hướng độc lập tương đương Markup hay Markdown:
+
+```
+Market State:     Accumulation, Markup, Distribution, Markdown
+Market Structure: Trading Range, Re-accumulation, Redistribution và các cấu trúc con
+
+Accumulation → Markup → Re-accumulation → Markup → Re-accumulation → Markup → Distribution → Markdown
+```
+
+**Nguyên tắc:** không định nghĩa `Markup → Trading Range = Re-accumulation`, mà là `Markup → Trading Range → Supply/Demand Analysis → Re-accumulation hoặc Distribution`. Không kết luận Re-accumulation chỉ vì giá vẫn nằm trên đáy của xu hướng tăng trước đó. Cần đánh giá đồng thời: Prior Trend, Structure, Supply Absorption, Demand Strength, Structural Integrity, Breakout Confirmation.
+
+### Điều kiện nhận diện
+
+| Tiêu chí | Điều kiện |
+|---|---|
+| Prior Trend | Trước đó đã có Markup rõ ràng, với cấu trúc HH–HL |
+| Trading Range | Giá tạm dừng tăng và hình thành vùng đi ngang hoặc điều chỉnh |
+| Support Structure | Giá duy trì được các vùng hỗ trợ quan trọng của xu hướng tăng trước đó |
+| Supply Absorption | Áp lực bán dần suy yếu, các nhịp giảm không tạo được LL đáng kể |
+| Demand Behavior | Các nhịp tăng có lực cầu tốt, trong khi các nhịp giảm thường có volume và spread suy giảm |
+| Structural Continuity | Cấu trúc tăng dài hạn chưa bị phá vỡ |
+
+### Các pha
+
+Đây là cấu trúc tham chiếu. Không phải Re-accumulation nào cũng có đủ 5 pha hoặc tất cả sự kiện.
+
+| Pha | Đặc điểm | Sự kiện thường gặp |
+|---|---|---|
+| A, Stopping Action | Tạm dừng xu hướng Markup trước đó | PS, BC, AR, ST |
+| B, Building Cause | Hấp thụ cung trong Trading Range | ST, các nhịp kiểm tra cung |
+| C, Testing Supply | Kiểm tra nguồn cung còn lại | Spring hoặc Test |
+| D, Demand Dominance | Cầu tiếp tục chiếm ưu thế | SOS, LPS |
+| E, Markup Resumption | Thoát Trading Range, tiếp tục tăng | Breakout, HH, HL |
+
+### Phân biệt với Distribution
+
+| Tiêu chí | Re-accumulation | Distribution |
+|---|---|---|
+| Xu hướng trước đó | Markup | Markup |
+| Cán cân cung cầu | Cầu vẫn có ưu thế | Cung dần chiếm ưu thế |
+| Các nhịp giảm | Cung suy yếu dần | Cung gia tăng |
+| Các nhịp tăng | Cầu mạnh, dễ mở rộng | Cầu yếu, khó vượt kháng cự |
+| Volume khi giảm | Thường giảm | Có thể tăng |
+| Volume khi tăng | Có thể cải thiện | Có thể suy yếu |
+| Cấu trúc giá | Giữ được hỗ trợ, HL | Có nguy cơ hình thành LH–LL |
+| Kết quả | Tiếp tục Markup | Chuyển sang Markdown |
+
+### Sự kiện không bắt buộc
+
+PS, BC, AR, ST, Spring, LPS đều không bắt buộc. Không nhất thiết có SOS cổ điển, nhưng phải có bằng chứng cầu chiếm ưu thế. Một Re-accumulation có thể không có Spring: giá có thể hấp thụ cung ngay trong Trading Range rồi breakout trực tiếp.
+
+### Ba mức
+
+| Mức | Điều kiện | Trên biểu đồ |
+|---|---|---|
+| **Candidate** | Xu hướng trước đó là Markup; giá bắt đầu hình thành Trading Range hoặc điều chỉnh kéo dài; cấu trúc tăng dài hạn chưa bị phá vỡ | `Re-acc?` trong đoạn range |
+| **Developing** | Trading Range được duy trì; có bằng chứng hấp thụ cung; các nhịp giảm suy yếu; lực cầu có dấu hiệu quay trở lại | `Re-accumulation?`, nhạt |
+| **Confirmed** | Có bằng chứng cầu chiếm ưu thế; giá breakout khỏi Trading Range; breakout được duy trì và không nhanh chóng thất bại; xu hướng HH–HL tiếp tục được thiết lập | `Re-accumulation`, đậm |
+
+### Cách đo trong hệ thống
+
+Dùng chung `_range_verdicts` với Accumulation. Khác biệt:
+
+| Yếu tố | Cách đo |
+|---|---|
+| Markup trước đó | Ngay từ đầu range, xu hướng Markup đã đạt từ Developing trở lên, tức đã có HH–HL trước range. Markup còn tiềm năng thì range đó không được xét là Re-accumulation |
+| Cấu trúc tăng chưa bị phá | Close không thấp hơn đáy swing gần nhất trước range (HL cuối của xu hướng) quá 0,5 ATR. Phá mức này thì bị bác bỏ |
+| Áp lực bán suy yếu | Phiên giảm gần đây có volume hoặc biên độ không cao hơn phiên tăng trong range; 10 phiên gần nhất không close dưới support − 0,5 ATR |
+| Nghiêng về | **Re-accumulation** khi đã Confirmed, hoặc volume phiên tăng cao hơn phiên giảm và chưa có đáy thấp hơn. **Distribution** khi phiên giảm có volume và biên độ cùng cao hơn phiên tăng, kèm đỉnh hoặc đáy thấp hơn. Còn lại là **chưa rõ** |
+
+Developing và Confirmed dùng cùng các điều kiện với Accumulation (hấp thụ cung, cầu gia tăng, cầu chiếm ưu thế, breakout, giữ hỗ trợ hoặc có LPS, HH–HL). Bác bỏ khác như ở trên; sau Confirmed giống Accumulation.
+
+Trên thẻ giai đoạn, Market State và cấu trúc hiện tách riêng. Khi đang trong Re-accumulation, Market State vẫn là Markup.
+
+**Số đo khám phá (cache H8, 311 mã, từ 2018):** 365 trên 7.765 range được xét Re-accumulation (4,7%; placebo 392 trên 8.413, 4,7%). Trong đó 43,8% từng Confirmed (41,8%), 70,1% cuối cùng bị bác bỏ (67,6%). Sau Confirmed, lợi suất 60 phiên +11,1% (placebo +1,8%, n = 160 và 164), close dưới support trong 60 phiên 22,5% (20,5%). Chênh lệch lợi suất lớn hơn các nhãn khác nhưng mẫu nhỏ, chưa kiểm soát xu hướng chung của thị trường và các ca trùng thời điểm, nên chưa phải bằng chứng về lợi thế. "Nghiêng về" được tính đến cuối thời gian xét, có thể gồm cả phần sau breakout, nên chưa đo được khả năng dự báo hướng thoát.
+
+**Chưa làm:** pha A chưa dùng BC làm mốc mà bắt đầu từ đầu range. Markup sau Re-accumulation vẫn tính là đoạn mới nên có thể hiện Early Markup, chưa nối với xu hướng trước. "Nghiêng về Distribution" chỉ là ghi chú, chưa có nhãn Distribution theo định nghĩa mới.
 
 ## Distribution (chưa định nghĩa lại)
 

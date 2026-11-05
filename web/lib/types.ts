@@ -50,7 +50,7 @@ export interface PhaseSegment {
 }
 
 export interface StageSegment {
-  kind: "up" | "down" | "up_potential" | "down_potential" | "range" | "accumulation" | "accumulation_developing" | "none";
+  kind: "up" | "down" | "up_potential" | "down_potential" | "range" | "accumulation" | "accumulation_developing" | "reaccumulation" | "reaccumulation_developing" | "none";
   label: string;
   i0: number;
   i1: number;
@@ -91,9 +91,10 @@ export interface TrendStrength {
 export interface StageInfo {
   view: "range" | "trend" | "transition"; // trong range: có pha; xu hướng: có sức mạnh cung cầu
   stage: string | null; // Markup | Markdown; null khi trong range hoặc chưa có xu hướng
-  revision_status: RevisionStatus | null; // mức chắc chắn của xu hướng hiện tại theo dữ liệu về sau
-  markdown_conditions: { key: string; label: string; met: boolean; detail: string }[]; // 5 điều kiện xác nhận Markdown
-  markdown_supporting: string[]; // SOW, LPSY trong đoạn, chỉ là sự kiện hỗ trợ
+  revision_status: RevisionStatus | "developing" | null; // mức chắc chắn của xu hướng hiện tại theo dữ liệu về sau
+  trend_conditions: { key: string; label: string; met: boolean; detail: string }[]; // điều kiện của Markup / Markdown hiện tại
+  trend_supporting: string[]; // sự kiện hỗ trợ: SOW, LPSY hoặc SOS, LPS; không bắt buộc
+  trend_state: string | null; // Markup: Early, Established, Extended, Weakening; không phải pha Wyckoff
   accumulation: {
     level: "potential" | "developing" | "confirmed" | "rejected";
     structure_type: string;
@@ -102,7 +103,9 @@ export interface StageInfo {
     reason: string;
     conditions: { key: string; label: string; met: boolean; detail: string }[];
     supporting: string[]; // sự kiện làm bằng chứng, không bắt buộc
-  } | null; // mức Accumulation của range hiện tại
+    leaning: string | null; // range sau Markup: nghiêng về Re-accumulation hay Distribution
+  } | null; // mức Accumulation / Re-accumulation của range hiện tại
+  market: { state: string | null; structure: string | null; leaning: string | null }; // Market State tách khỏi Market Structure
   structure_type: string;
   strength: TrendStrength | null;
   note: string | null; // lưu ý từ kết quả kiểm định khi có pha C trong range

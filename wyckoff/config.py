@@ -260,9 +260,11 @@ class LifecycleConfig:
 class RevisionConfig:
     """Lớp đánh giá lại (wyckoff/revision.py): tiềm năng -> xác nhận -> bác bỏ, dùng dữ liệu về sau để sửa nhãn trên biểu đồ.
     Chỉ ghi nhận, không đổi pha / tin cậy / backtest. Ngưỡng là khám phá trên mẫu H8, chưa phải kiểm định."""
-    # Markup
-    trend_confirm_bars: int = 10      # xác nhận sau tối thiểu 10 phiên ...
-    trend_confirm_atr: float = 3.0    # ... và close cách mốc tham chiếu >= 3 ATR
+    # Markup (docs/stage-definitions.md)
+    mk_min_swings: int = 2            # HH-HL qua nhiều nhịp: tối thiểu 2 đỉnh và 2 đáy cao dần
+    mk_base_lookback: int = 60        # xu hướng theo SMA: nền giá là range kết thúc trong 60 phiên trước
+    mk_extended_bars: int = 60        # Extended Markup: từ 60 phiên sau breakout ...
+    mk_extended_atr: float = 1.5      # ... hoặc ATR gấp 1,5 lần lúc breakout
     trend_watch_bars: int = 60        # Markdown / Markup: theo dõi bác bỏ tối đa 60 phiên sau xác nhận
     # Markdown: xác nhận khi đủ 5 điều kiện (docs/stage-definitions.md)
     md_min_lower_highs: int = 1       # số đỉnh thấp dần tạo sau khi thủng hỗ trợ

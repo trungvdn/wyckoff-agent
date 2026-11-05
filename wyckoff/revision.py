@@ -14,13 +14,14 @@ Quy tắc (ngưỡng trong `RevisionConfig`, là khám phá trên mẫu H8, chư
         close dưới hỗ trợ, LH-LL sau khi thủng, nhịp hồi yếu, cung áp đảo cầu, không có cầu đủ mạnh.
         SOW, LPSY chỉ là sự kiện hỗ trợ; UT, UTAD thuộc Distribution, không phải điều kiện.
         Từ range: trước xác nhận close >= support -> bác bỏ; sau xác nhận close >= resistance hoặc SOS reclaim -> bác bỏ.
-    Markup từ range thoát lên
-        tiềm năng tại phiên thoát; xác nhận sau >= 10 phiên, close >= resistance + 3 ATR; close < support -> bác bỏ.
-        Close quay lại dưới resistance chưa phải bác bỏ vì pullback sau breakout là bình thường (LPS).
+    Markup (định nghĩa đầy đủ: docs/stage-definitions.md) là trạng thái thị trường, không phải một sự kiện.
+        Candidate: breakout khỏi range, cầu mở rộng, phá đỉnh cấu trúc. Developing: breakout duy trì, HH-HL, điều chỉnh yếu về cung.
+        Confirmed: HH-HL qua nhiều nhịp, giữ hỗ trợ cấu trúc, cầu tiếp tục chiếm ưu thế. Sự kiện chỉ là bằng chứng.
+        Từ range: close < support -> bác bỏ. Close quay lại dưới resistance chưa phải bác bỏ vì pullback sau breakout là bình thường.
     Markdown từ SMA50 (5 close liên tiếp)
         hỗ trợ là đáy swing gần nhất đã biết khi vào xu hướng; close qua lại SMA50 lúc vào xu hướng -> bác bỏ.
     Markup từ SMA50 (5 close liên tiếp)
-        mốc tham chiếu là SMA50 tại phiên vào xu hướng; xác nhận như trên; close dưới mốc đó -> bác bỏ.
+        nền giá là range gần nhất đã kết thúc; không có nền thì chỉ là tiềm năng. Close dưới SMA50 lúc vào xu hướng -> bác bỏ.
     Xu hướng kết thúc mà chưa đủ điều kiện: giữ nguyên tiềm năng.
     Spring kéo dài
         range thoát xuống, trong 30 phiên có phiên close >= support + 1 tick với demand, Markdown chưa xác nhận.
@@ -34,6 +35,9 @@ Quy tắc (ngưỡng trong `RevisionConfig`, là khám phá trên mẫu H8, chư
         ứng viên: bối cảnh giảm + biên độ giảm lớn + volume đột biến; hấp thụ cung cùng phiên là bằng chứng, không bắt buộc.
         xác nhận: giá không giảm đáng kể rồi phản ứng tăng mạnh, có AR, hoặc ổn định với volume giảm (chỉ khi có hấp thụ cùng phiên).
         bác bỏ: close thủng đáy ứng viên quá 1 ATR, hoặc hết hạn không có phản ứng. PS, AR, ST theo trạng thái của SC.
+    Re-accumulation của range (định nghĩa đầy đủ: docs/stage-definitions.md)
+        Candidate: sau Markup đã rõ, hình thành range, cấu trúc tăng chưa bị phá. Developing, Confirmed như Accumulation.
+        Không mặc định Markup + range = Re-accumulation: `leaning` ghi nghiêng về Re-accumulation hay Distribution.
     Accumulation của range (định nghĩa đầy đủ: docs/stage-definitions.md)
         Candidate: có Markdown trước đó, range hình thành, cung yếu đi. Developing: TR duy trì, hấp thụ cung, cầu tăng.
         Confirmed: SOS hoặc breakout, cầu chiếm ưu thế, giữ hỗ trợ hoặc có LPS, HH-HL. Sự kiện chỉ là bằng chứng.
@@ -118,8 +122,9 @@ class TrendHypothesis:
     reference: float              # mốc đo khoảng cách xác nhận
     opposite: float | None        # biên đối diện của range
     history: tuple[Verdict, ...]
-    conditions: tuple[Condition, ...] = ()   # Markdown: 5 điều kiện tại phiên xác nhận, hoặc phiên cuối đã xét
-    supporting: tuple[str, ...] = ()         # Markdown: SOW, LPSY trong đoạn, chỉ là sự kiện hỗ trợ
+    conditions: tuple[Condition, ...] = ()   # điều kiện tại phiên xác nhận, hoặc phiên cuối đã xét
+    supporting: tuple[str, ...] = ()         # Markdown: SOW, LPSY; Markup: SOS, LPS. Chỉ là sự kiện hỗ trợ
+    state: str | None = None                 # Markup: Early, Established, Extended, Weakening; không phải pha Wyckoff
 
     @property
     def status(self) -> str:
@@ -136,22 +141,27 @@ class TrendHypothesis:
         return {
             "stage": self.stage, "status": self.status, "source": self.source, "range_id": self.range_id,
             "since": f"{self.start_date:%Y-%m-%d}", "reason": self.reason, "reference": round(self.reference, 2),
-            "conditions": [c.__dict__ for c in self.conditions], "supporting": list(self.supporting),
+            "conditions": [c.__dict__ for c in self.conditions], "supporting": list(self.supporting), "state": self.state,
             "history": [{"status": v.status, "date": f"{v.date:%Y-%m-%d}", "reason": v.reason} for v in self.history],
         }
 
 
 @dataclass(frozen=True)
 class RangeVerdict:
-    """Mức Accumulation của một range: tiềm năng (Candidate), developing, xác nhận, bác bỏ."""
+    """Mức Accumulation hoặc Re-accumulation của một range: tiềm năng (Candidate), developing, xác nhận, bác bỏ."""
     range_id: int
-    structure_type: str           # Initial Accumulation | Accumulation (không rõ xu hướng trước range)
+    structure_type: str           # Initial Accumulation | Accumulation | Re-accumulation
     start_idx: int
     end_idx: int                  # hồi cứu: phiên trước khi Markup bắt đầu, hoặc hết range / phiên xác nhận
     history: tuple[Verdict, ...]
     conditions: tuple[Condition, ...] = ()   # tại phiên xác nhận, hoặc phiên cuối đã xét
     supporting: tuple[str, ...] = ()         # sự kiện làm bằng chứng, không bắt buộc
     demand_idx: int | None = None            # phiên đầu tiên cầu bắt đầu kiểm soát, không cần SOS (mốc pha D)
+    leaning: str | None = None               # chỉ với range sau Markup: Re-accumulation | Distribution | chưa rõ
+
+    @property
+    def is_reaccumulation(self) -> bool:
+        return self.structure_type == "Re-accumulation"
 
     @property
     def status(self) -> str:
@@ -168,7 +178,8 @@ class RangeVerdict:
 
     def to_dict(self) -> dict[str, Any]:
         return {"level": self.status, "structure_type": self.structure_type, "label": self.label, "since": f"{self.history[0].date:%Y-%m-%d}",
-                "reason": self.history[-1].reason, "conditions": [c.__dict__ for c in self.conditions], "supporting": list(self.supporting)}
+                "reason": self.history[-1].reason, "conditions": [c.__dict__ for c in self.conditions], "supporting": list(self.supporting),
+                "leaning": self.leaning}
 
 
 @dataclass
@@ -181,6 +192,22 @@ class RevisionResult:
     phase_segments: list[PhaseSegment]
     labels: dict[str, str] = field(default_factory=dict)   # event_id -> tên hiển thị
     range_verdicts: dict[int, RangeVerdict] = field(default_factory=dict)
+
+    def market_view(self, range_id: int | None, in_range: bool, date: pd.Timestamp) -> dict[str, Any]:
+        """Tách hai khái niệm: Market State (Accumulation, Markup, Distribution, Markdown) và Market Structure
+        (Trading Range, Re-accumulation...). Re-accumulation là cấu trúc nằm trong trạng thái Markup."""
+        v = self.range_verdicts.get(range_id) if range_id is not None else None
+        live = v if v is not None and v.status != REJECTED else None
+        hyp = self.hypothesis_on(date)
+        if in_range:
+            if live is not None and live.is_reaccumulation:
+                return {"state": MARKUP, "structure": live.label, "leaning": live.leaning}
+            if live is not None:
+                return {"state": "Accumulation", "structure": "Trading Range", "leaning": None}
+            return {"state": None, "structure": "Trading Range", "leaning": None}
+        if hyp is not None and hyp.status != REJECTED:
+            return {"state": hyp.stage, "structure": None, "leaning": None}
+        return {"state": None, "structure": None, "leaning": None}
 
     def accumulation_of(self, range_id: int | None) -> RangeVerdict | None:
         """Range đang được xác nhận là Accumulation theo dữ liệu đến phiên cuối (đã bác bỏ -> None)."""
@@ -343,19 +370,122 @@ class _MarkdownTest:
         return Condition("no_demand", label, True, "không có SOS, không có phiên demand vượt đỉnh gần nhất")
 
 
+class _SideStats:
+    """Trung bình volume, biên độ của phiên tăng / phiên giảm trên đoạn [a, b], O(1) nhờ tổng tích lũy."""
+
+    def __init__(self, df: pd.DataFrame, cfg: Config) -> None:
+        r = _rounded(df, cfg.indicators.ratio_decimals)
+        vr = np.nan_to_num(r["vol_ratio"].to_numpy(dtype=float))
+        sa = np.nan_to_num(r["spread_atr"].to_numpy(dtype=float))
+        o, c = df["open"].to_numpy(dtype=float), df["close"].to_numpy(dtype=float)
+        self.min_bars = cfg.revision.md_min_side_bars
+        self.tables: dict[tuple[str, str], np.ndarray] = {}
+        for side, mask in (("up", c > o), ("down", c < o)):
+            for what, values in (("n", np.ones(len(c))), ("vr", vr), ("sa", sa)):
+                self.tables[(side, what)] = np.r_[0.0, np.cumsum(values * mask)]
+
+    def mean(self, side: str, what: str, a: int, b: int) -> float | None:
+        """Không đủ phiên -> None."""
+        if a > b:
+            return None
+        n = self.tables[(side, "n")][b + 1] - self.tables[(side, "n")][a]
+        return None if n < self.min_bars else float((self.tables[(side, what)][b + 1] - self.tables[(side, what)][a]) / n)
+
+
+def _ascending_run(pivots: list[Swing], b: int) -> int:
+    """Số pivot tăng dần liên tiếp tính từ pivot mới nhất, chỉ đếm pivot tạo từ phiên b trở đi, so với pivot ngay trước đó."""
+    seq = [s for s in pivots if s.idx < b][-1:] + [s for s in pivots if s.idx >= b]
+    run = 0
+    for x, y in zip(reversed(seq[:-1]), reversed(seq[1:])):
+        if y.price <= x.price + _EPS:
+            break
+        run += 1
+    return run
+
+
+class _MarkupTest:
+    """Điều kiện Markup tại phiên t (docs/stage-definitions.md). `b`: phiên close đầu tiên trên kháng cự. Chỉ dùng dữ liệu <= t."""
+
+    def __init__(self, df: pd.DataFrame, swings: list[Swing], stats: _SideStats, cfg: Config) -> None:
+        self.c = df["close"].to_numpy(dtype=float)
+        self.atr = df["atr"].to_numpy(dtype=float)
+        self.stats = stats
+        self.rc = cfg.revision
+        self.window = cfg.revision.acc_window
+        self.highs = sorted((s for s in swings if s.kind == "high"), key=lambda s: s.idx)
+        self.lows = sorted((s for s in swings if s.kind == "low"), key=lambda s: s.idx)
+        self._high_conf = [s.confirmed_idx for s in self.highs]
+        self._low_conf = [s.confirmed_idx for s in self.lows]
+
+    def known(self, t: int) -> tuple[list[Swing], list[Swing]]:
+        return self.highs[:bisect_right(self._high_conf, t)], self.lows[:bisect_right(self._low_conf, t)]
+
+    def evaluate(self, t: int, b: int | None, res: float | None, base: str | None) -> tuple[Condition, ...]:
+        c, rc, st = self.c, self.rc, self.stats
+        prior = Condition("prior_structure", "Có nền giá trước đó", base is not None, base or "chưa có Trading Range làm nền")
+        if base is None or b is None or res is None:
+            why = "chưa có nền giá" if base is None else f"chưa có close trên kháng cự {vn_num(res)}"
+            return (prior, Condition("breakout", "Phá vỡ kháng cự", False, why))
+        highs, lows = self.known(t)
+        floor_b = res * (1 - rc.lps_max_depth)
+        breakout = Condition("breakout", "Phá vỡ kháng cự", c[t] > floor_b - _EPS, f"từ close đầu tiên trên {vn_num(res)}, hiện {vn_num(c[t])}")
+        a = max(b, t - self.window + 1)
+        vu, vd, su, sd = st.mean("up", "vr", a, t), st.mean("down", "vr", a, t), st.mean("up", "sa", a, t), st.mean("down", "sa", a, t)
+        text = "chưa đủ phiên tăng" if vu is None else (f"phiên tăng volume {vn_num(vu)}x, biên độ {vn_num(su)} ATR" + ("" if vd is None else f"; phiên giảm {vn_num(vd)}x, {vn_num(sd)} ATR"))
+        expansion = Condition("demand", "Cầu mở rộng", bool(vu is not None and (vd is None or (vu >= vd - _EPS and su >= sd - _EPS))), text)
+        before = [s.price for s in highs if s.idx < b]
+        lh_ok = bool(before) and c[t] > before[-1] + _EPS
+        breaks = Condition("breaks_lh", "Phá đỉnh cấu trúc trước đó", lh_ok, "chưa có đỉnh trước" if not before else f"đỉnh trước {vn_num(before[-1])}")
+        low_b = c[b:t + 1].min()
+        kept = Condition("maintained", "Breakout được duy trì", low_b >= floor_b - _EPS, f"close thấp nhất sau breakout {vn_num(low_b)}")
+        n_hh, n_hl = _ascending_run(highs, b), _ascending_run(lows, b)
+        pair = Condition("hh_hl", "Hình thành HH–HL", n_hh >= 1 and n_hl >= 1, f"{n_hh} đỉnh cao hơn, {n_hl} đáy cao hơn liên tiếp")
+        supply = Condition("supply_weak", "Điều chỉnh yếu về cung", bool(vd is None or (vu is not None and vd <= vu + _EPS and sd <= su + _EPS)),
+                           "rất ít phiên giảm" if vd is None else f"phiên giảm volume {vn_num(vd)}x, biên độ {vn_num(sd)} ATR")
+        multi = Condition("hh_hl_multi", "HH–HL qua nhiều nhịp", n_hh >= rc.mk_min_swings and n_hl >= rc.mk_min_swings, f"cần tối thiểu {rc.mk_min_swings} đỉnh và {rc.mk_min_swings} đáy")
+        last_low = lows[-1].price if lows and lows[-1].idx >= b else None
+        holds = c[t] >= floor_b - _EPS and (last_low is None or c[t] >= last_low - _EPS)
+        support = Condition("support", "Giữ hỗ trợ cấu trúc", bool(holds), "hỗ trợ " + vn_num(res if last_low is None else last_low))
+        dominance = Condition("dominance", "Cầu tiếp tục chiếm ưu thế", bool(vu is not None and (vd is None or vu > vd + _EPS)), text)
+        return prior, breakout, expansion, breaks, kept, pair, supply, multi, support, dominance
+
+    def state(self, t: int, b: int | None, status: str) -> str | None:
+        """Trạng thái vận động để phân tích, không phải pha Wyckoff. Chỉ có khi đã có breakout."""
+        if b is None:
+            return None
+        if status not in (DEVELOPING, CONFIRMED):
+            return "Early Markup"
+        c, st = self.c, self.stats
+        highs, lows = self.known(t)
+        new_highs = [s for s in highs if s.idx >= b]
+        lower_high = len(new_highs) >= 2 and new_highs[-1].price < new_highs[-2].price - _EPS
+        lost_low = bool(lows) and lows[-1].idx >= b and c[t] < lows[-1].price - _EPS
+        a = max(b, t - self.window + 1)
+        vu, vd, su, sd = st.mean("up", "vr", a, t), st.mean("down", "vr", a, t), st.mean("up", "sa", a, t), st.mean("down", "sa", a, t)
+        supply_up = None not in (vu, vd, su, sd) and vd > vu + _EPS and sd > su + _EPS
+        if lower_high or lost_low or supply_up:
+            return "Markup Weakening"
+        if status != CONFIRMED:
+            return "Early Markup"
+        grown = not np.isnan(self.atr[b]) and self.atr[t] >= self.rc.mk_extended_atr * self.atr[b]
+        return "Extended Markup" if t - b >= self.rc.mk_extended_bars or grown else "Established Markup"
+
+
 def _trend_hypotheses(
     df: pd.DataFrame, stages: StageResult, ranges: list[TradingRange], events: list[Event], swings: list[Swing],
-    distribution: list[Event], cfg: Config,
+    distribution: list[Event], cfg: Config, later: list[Event] = (),
 ) -> list[TrendHypothesis]:
     rc = cfg.revision
     close = df["close"].to_numpy(dtype=float)
-    atr = df["atr"].to_numpy(dtype=float)
     sma = df["sma"].to_numpy(dtype=float)
     dates = df.index
     last = len(df) - 1
     exit_at = {r.end_confirmed_idx: r for r in ranges if r.end_confirmed_idx is not None}
     reclaim_conf = {(e.range_id, e.confirmed_idx) for e in events if e.kind == EventType.SOS and e.details.get("reclaim")}
     md_test = _MarkdownTest(df, swings, events, cfg)
+    mk_test = _MarkupTest(df, swings, _SideStats(df, cfg), cfg)
+    up_events = sorted((e for e in list(events) + list(later) if e.kind in (EventType.SOS, EventType.LPS)
+                        and (e.kind != EventType.LPS or e.details.get("lps_definition"))), key=lambda e: e.confirmed_idx)
     support_events = sorted((e for e in distribution if e.kind in (EventType.SOW, EventType.LPSY)), key=lambda e: e.confirmed_idx)
     out: list[TrendHypothesis] = []
     for g in stages.segments:
@@ -371,9 +501,6 @@ def _trend_hypotheses(
         else:
             ref, opp, rid = (close[a] if np.isnan(sma[a]) else float(sma[a])), None, None
             opening = f"{g.stage} theo SMA từ {vn_ts(dates[a])}, chờ xác nhận"
-
-        def beyond(t: int) -> float:
-            return (ref - close[t]) if down else (close[t] - ref)
 
         def rejected_before(t: int) -> str | None:
             if down and close[t] >= ref - _EPS:
@@ -402,6 +529,17 @@ def _trend_hypotheses(
                 first_below -= 1
         conditions: tuple[Condition, ...] = ()
         last_eval: int | None = None
+        # Markup: nền giá là range vừa thoát lên, hoặc range gần nhất đã kết thúc khi vào xu hướng theo SMA
+        base_rng = rng if not down and from_range else None
+        if not down and base_rng is None:
+            base_rng = next((r for r in reversed(ranges) if r.confirmed_idx < a and 0 <= a - r.end_idx <= rc.mk_base_lookback), None)
+        base = None if base_rng is None else f"TR#{base_rng.range_id}, kháng cự {vn_num(base_rng.resistance)}"
+        res_up = None if base_rng is None else base_rng.resistance
+        # Breakout là close đầu tiên trên kháng cự kể từ khi range kết thúc, kể cả khi xu hướng trong nhật ký bắt đầu muộn hơn
+        above: int | None = None
+        if res_up is not None:
+            above = next((j for j in range(base_rng.end_idx, a + 1) if close[j] > res_up + _EPS), None)
+        mk_level = POTENTIAL
 
         hist = [Verdict(POTENTIAL, a, dates[a], opening)]
         conf: int | None = None
@@ -424,10 +562,19 @@ def _trend_hypotheses(
                         if all(x.met for x in conditions):
                             conf = t
                             hist.append(Verdict(CONFIRMED, t, dates[t], "đủ 5 điều kiện: thủng hỗ trợ, LH–LL, hồi yếu, cung áp đảo, không có cầu đủ mạnh"))
-                elif t - a >= rc.trend_confirm_bars and not np.isnan(atr[t]) and beyond(t) >= rc.trend_confirm_atr * atr[t] - _EPS:
-                    conf = t
-                    hist.append(Verdict(CONFIRMED, t, dates[t],
-                                        f"sau {t - a} phiên, close {vn_num(close[t])} cách mốc {vn_num(ref)} tối thiểu {vn_g(rc.trend_confirm_atr)} ATR"))
+                else:
+                    if above is None and res_up is not None and close[t] > res_up + _EPS:
+                        above = t
+                    last_eval = t
+                    conditions = mk_test.evaluate(t, above, res_up, base)
+                    met = {x.key: x.met for x in conditions}
+                    if len(conditions) > 2:
+                        if met["prior_structure"] and met["maintained"] and met["hh_hl_multi"] and met["support"] and met["dominance"]:
+                            conf = t
+                            hist.append(Verdict(CONFIRMED, t, dates[t], "HH–HL qua nhiều nhịp, giữ hỗ trợ cấu trúc, cầu tiếp tục chiếm ưu thế"))
+                        elif mk_level == POTENTIAL and met["breakout"] and met["maintained"] and met["hh_hl"] and met["supply_weak"]:
+                            mk_level = DEVELOPING
+                            hist.append(Verdict(DEVELOPING, t, dates[t], "breakout được duy trì, có HH–HL, điều chỉnh yếu về cung"))
             else:
                 if t > conf + rc.trend_watch_bars:
                     break
@@ -435,11 +582,13 @@ def _trend_hypotheses(
                 if why:
                     hist.append(Verdict(REJECTED, t, dates[t], why))
                     break
-        if conf is None and last_eval is not None:
+        if down and conf is None and last_eval is not None:
             conditions = md_test.evaluate(last_eval, first_below, support)
-        supporting = tuple(f"{e.kind.value} {vn_ts(e.date)}" for e in support_events if a <= e.confirmed_idx <= b) if down else ()
+        pool = support_events if down else up_events
+        supporting = tuple(f"{e.kind.value} {vn_ts(e.date)}" for e in pool if a <= e.confirmed_idx <= b)
+        state = None if down or hist[-1].status == REJECTED else mk_test.state(min(b, last), above, hist[-1].status)
         out.append(TrendHypothesis(g.stage, "range_exit" if from_range else "sma", a, dates[a], b, dates[b], rid,
-                                   float(ref), None if opp is None else float(opp), tuple(hist), conditions, supporting))
+                                   float(ref), None if opp is None else float(opp), tuple(hist), conditions, supporting, state))
     return out
 
 
@@ -945,19 +1094,7 @@ def _range_verdicts(
     hyp_by_range = {h.range_id: h for h in hyps if h.source == "range_exit"}
     range_conf = sorted(r.confirmed_idx for r in ranges)
 
-    def cum(values: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        return np.r_[0.0, np.cumsum(values * mask)]
-
-    up, down = c > o, c < o
-    tables = {("up", "n"): cum(np.ones(len(c)), up), ("up", "vr"): cum(vr, up), ("up", "sa"): cum(sa, up),
-              ("down", "n"): cum(np.ones(len(c)), down), ("down", "vr"): cum(vr, down), ("down", "sa"): cum(sa, down)}
-
-    def mean(side: str, what: str, a: int, b: int) -> float | None:
-        """Trung bình trên các phiên `side` trong [a, b]; không đủ phiên -> None."""
-        if a > b:
-            return None
-        n = tables[(side, "n")][b + 1] - tables[(side, "n")][a]
-        return None if n < rc.md_min_side_bars else float((tables[(side, what)][b + 1] - tables[(side, what)][a]) / n)
+    mean = _SideStats(df, cfg).mean
 
     def status_time(e: Event, status: str) -> int | None:
         return next((v.idx for v in assessments.get(e.event_id, ()) if v.status == status), None)
@@ -980,10 +1117,21 @@ def _range_verdicts(
         near_sc = [s for s in scs if start - cfg.ar.window <= s.idx <= rng.confirmed_idx and s.confirmed_idx <= rng.confirmed_idx
                    and (s.invalidated is None or s.invalidated.idx > rng.confirmed_idx)]
         stage_before = prior.get(rid)
+        # Markup đã rõ (từ Developing, có HH-HL) ngay từ lúc range bắt đầu: xét Re-accumulation. Không có thì xét Accumulation.
+        # Xét tại đầu range để đỉnh, đáy bên trong range không được tính là HH-HL của xu hướng trước.
+        prior_up = next((h for h in reversed(hyps) if h.stage == MARKUP and h.start_idx < rng.start_idx and h.end_idx >= rng.start_idx
+                         and h.status_at(rng.start_idx) in (DEVELOPING, CONFIRMED)), None)
+        reacc = prior_up is not None
         prior_ok = decline >= sc.min_decline and (stage_before == MARKDOWN or bool(falling) or bool(near_sc))
-        if not prior_ok:
+        if not reacc and not prior_ok:
             continue
-        prior_text = f"giảm {vn_g(round(decline * 100, 1))}% trước range" + (f", SC {vn_ts(near_sc[-1].date)}" if near_sc else "")
+        if reacc:
+            near_sc = []
+            prior_text = f"Markup từ {vn_ts(prior_up.start_date)}"
+        else:
+            prior_text = f"giảm {vn_g(round(decline * 100, 1))}% trước range" + (f", SC {vn_ts(near_sc[-1].date)}" if near_sc else "")
+        # Cấu trúc tăng: đáy swing gần nhất trước range, là HL cuối cùng của xu hướng
+        last_hl = next((s.price for s in reversed(lows) if s.idx < start and s.confirmed_idx <= rng.confirmed_idx), sup)
 
         x = rng.end_confirmed_idx
         next_range = next((q for q in range_conf if q > rng.confirmed_idx), last + 1)
@@ -1011,10 +1159,16 @@ def _range_verdicts(
             v_old, s_old = mean("down", "vr", *before), mean("down", "sa", *before)
             floor = sup - cfg.ranges.exit_atr * atr[t]
             holds = c[max(a, t - 9):t + 1].min() >= floor - _EPS
-            calmer = v_now is not None and v_old is not None and s_now is not None and s_old is not None and (v_now <= v_old + _EPS or s_now <= s_old + _EPS)
-            selling = Condition("weak_selling", "Áp lực bán suy yếu", bool(holds and calmer),
-                                "chưa đủ phiên giảm để so sánh" if v_now is None or v_old is None else
-                                f"phiên giảm volume {vn_num(v_now)}x, trước range {vn_num(v_old)}x; " + ("không có đáy mới" if holds else "vừa có đáy mới"))
+            if reacc:
+                # Đoạn trước range là xu hướng tăng, ít phiên giảm: so phiên giảm với phiên tăng ngay trong range
+                v_up, s_up = mean("up", "vr", a, t), mean("up", "sa", a, t)
+                calmer = v_now is None or (v_up is not None and (v_now <= v_up + _EPS or s_now <= s_up + _EPS))
+                selling_text = "rất ít phiên giảm" if v_now is None else f"phiên giảm volume {vn_num(v_now)}x, biên độ {vn_num(s_now)} ATR; " + ("không có đáy mới" if holds else "vừa có đáy mới")
+            else:
+                calmer = v_now is not None and v_old is not None and s_now is not None and s_old is not None and (v_now <= v_old + _EPS or s_now <= s_old + _EPS)
+                selling_text = "chưa đủ phiên giảm để so sánh" if v_now is None or v_old is None else \
+                    f"phiên giảm volume {vn_num(v_now)}x, trước range {vn_num(v_old)}x; " + ("không có đáy mới" if holds else "vừa có đáy mới")
+            selling = Condition("weak_selling", "Áp lực bán suy yếu", bool(holds and calmer), selling_text)
             # TR được duy trì: còn trong range, hoặc đã thoát lên, hoặc thoát xuống nhưng Markdown bị bác bỏ
             back_in = hyp is not None and hyp.stage == MARKDOWN and hyp.status_at(t) == REJECTED
             kept = rng.known_active_at(t, last) or back_in or (rng.exit_direction == "up" and x is not None and t >= x)
@@ -1056,7 +1210,11 @@ def _range_verdicts(
                 hl = new_lows[-1].price > prev_low + _EPS if new_lows else bool(lps_now and lps_now[0].close > prev_low + _EPS) or bool(held)
                 hh = after.max() > res + _EPS
                 turn = Condition("hh_hl", "Cấu trúc HH–HL", bool(hl and hh), f"đỉnh sau breakout {vn_num(after.max())}, đáy trước {vn_num(prev_low)}" + ("" if hl else ", chưa có đáy cao hơn"))
-            return selling, maintained, absorption, rising, dominant, breakout, hold, turn
+            base = (selling, maintained, absorption, rising, dominant, breakout, hold, turn)
+            if reacc:
+                floor_hl = last_hl - cfg.ranges.exit_atr * atr[t]
+                return base + (Condition("structure", "Cấu trúc tăng chưa bị phá", bool(c[t] >= floor_hl - _EPS), f"HL trước range {vn_num(last_hl)}, close {vn_num(c[t])}"),)
+            return base
 
         hist: list[Verdict] = []
         level = None
@@ -1074,6 +1232,11 @@ def _range_verdicts(
                 break
             conds = evaluate(t)
             met = {k.key: k.met for k in conds}
+            if reacc and not met["structure"]:
+                if hist:
+                    hist.append(Verdict(REJECTED, t, dates[t], f"close {vn_num(c[t])} phá cấu trúc tăng, HL trước range {vn_num(last_hl)}"))
+                level = REJECTED
+                break
             # Cầu bắt đầu kiểm soát: duy trì đủ số phiên cầu chiếm ưu thế ở nửa trên range, với đáy swing gần nhất cao hơn đáy trước.
             # Close thủng support nghĩa là cầu chưa kiểm soát được: bỏ mốc, xét lại từ đầu.
             known = [s.price for s in lows if s.idx >= start and s.confirmed_idx <= t]
@@ -1090,6 +1253,9 @@ def _range_verdicts(
             if level != DEVELOPING and met["weak_selling"] and met["range_kept"] and met["absorption"] and met["demand"]:
                 hist.append(Verdict(DEVELOPING, t, dates[t], "TR duy trì, có hấp thụ cung, cung yếu đi, cầu tăng"))
                 level = DEVELOPING
+            elif level is None and reacc:
+                hist.append(Verdict(POTENTIAL, t, dates[t], f"sau {prior_text}, hình thành range, cấu trúc tăng chưa bị phá"))
+                level = POTENTIAL
             elif level is None and met["weak_selling"]:
                 hist.append(Verdict(POTENTIAL, t, dates[t], f"sau Markdown ({prior_text}), áp lực bán yếu đi"))
                 level = POTENTIAL
@@ -1120,8 +1286,25 @@ def _range_verdicts(
         ref = conf_at if conf_at is not None else rng.end_idx
         end = up_start - 1 if up_start is not None and (conf_at is None or up_start <= conf_at) else ref
         supporting = tuple(sorted({f"{e.kind.value} {vn_ts(e.date)}" for e in evidence + sos_list + lps_list if _final(assessments.get(e.event_id, (Verdict(REJECTED, 0, e.date),))) == CONFIRMED}))
-        typ = "Initial Accumulation" if stage_before == MARKDOWN else "Accumulation"
-        out[rid] = RangeVerdict(rid, typ, start, max(end, start), tuple(hist), conds, supporting, demand_idx)
+        typ = "Re-accumulation" if reacc else "Initial Accumulation" if stage_before == MARKDOWN else "Accumulation"
+        leaning = None
+        if reacc:
+            # Markup -> range -> phân tích cung cầu -> Re-accumulation hoặc Distribution, không mặc định là Re-accumulation
+            t_end = conf_at if conf_at is not None else stop
+            a_end = max(start, t_end - rc.acc_window + 1)
+            vu_l, vd_l, su_l, sd_l = mean("up", "vr", a_end, t_end), mean("down", "vr", a_end, t_end), mean("up", "sa", a_end, t_end), mean("down", "sa", a_end, t_end)
+            new_lows = [s.price for s in lows if s.idx >= start and s.confirmed_idx <= t_end]
+            new_highs = [s.price for s in highs if s.idx >= start and s.confirmed_idx <= t_end]
+            lower_low = len(new_lows) >= 2 and new_lows[-1] < new_lows[-2] - _EPS
+            lower_high = len(new_highs) >= 2 and new_highs[-1] < new_highs[-2] - _EPS
+            sides = None not in (vu_l, vd_l, su_l, sd_l)
+            if conf_at is not None or (sides and vu_l > vd_l + _EPS and not lower_low):
+                leaning = "Re-accumulation"
+            elif sides and vd_l > vu_l + _EPS and sd_l > su_l + _EPS and (lower_high or lower_low):
+                leaning = "Distribution"
+            else:
+                leaning = "chưa rõ"
+        out[rid] = RangeVerdict(rid, typ, start, max(end, start), tuple(hist), conds, supporting, demand_idx, leaning)
     return out
 
 
@@ -1129,7 +1312,7 @@ def _accumulation_phases(
     df: pd.DataFrame, series: pd.DataFrame, ranges: list[TradingRange], verdicts: dict[int, RangeVerdict], hyps: list[TrendHypothesis],
     events: list[Event], scs: list[Event], assessments: dict[str, tuple[Verdict, ...]], cfg: Config,
 ) -> pd.DataFrame:
-    """Pha A đến E là pha của Accumulation (docs/stage-definitions.md): chỉ range đang là Accumulation mới có pha.
+    """Pha A đến E là pha của Accumulation và Re-accumulation (docs/stage-definitions.md): chỉ các range này mới có pha.
     Không sự kiện nào bắt buộc: A dừng xu hướng giảm (SC nếu có, không thì đầu range); B từ khi TR xác nhận hoặc có ST;
     C từ Spring / Test nếu có; D từ SOS hoặc khi cầu bắt đầu kiểm soát; E khi giá thoát khỏi TR.
     Range không phải Accumulation hoặc đã bị bác bỏ: bỏ các pha A đến E của nhật ký, giữ 'invalid' và 'potential'."""
@@ -1156,7 +1339,7 @@ def _accumulation_phases(
             phase[drop], reason[drop] = None, ""
             continue
         own = [e for e in events if e.range_id == rid and confirmed_now(e)]
-        near_sc = [s for s in scs if rng.start_idx - cfg.ar.window <= s.idx <= rng.confirmed_idx and s.invalidated is None]
+        near_sc = [] if v.is_reaccumulation else [s for s in scs if rng.start_idx - cfg.ar.window <= s.idx <= rng.confirmed_idx and s.invalidated is None]
         a0 = near_sc[-1].idx if near_sc else rng.start_idx
         st = [e.idx for e in events if e.kind == EventType.ST and e.details.get("sc_date") in {f"{s.date:%Y-%m-%d}" for s in near_sc} and confirmed_now(e)]
         b0 = min(st + [rng.confirmed_idx])
@@ -1173,7 +1356,7 @@ def _accumulation_phases(
             end = rng.end_idx          # thoát xuống chưa rõ kết quả: phần sau do 'potential' / 'invalid' mô tả
         else:
             end = min(next_range - 1, last)
-        marks = [("A", a0, "Stopping Action: " + (f"SC {vn_ts(near_sc[-1].date)}" if near_sc else "dừng xu hướng giảm, hình thành TR")),
+        marks = [("A", a0, "Stopping Action: " + (f"SC {vn_ts(near_sc[-1].date)}" if near_sc else "tạm dừng Markup, hình thành TR" if v.is_reaccumulation else "dừng xu hướng giảm, hình thành TR")),
                  ("B", b0, "Building Cause: hấp thụ cung, xây dựng nền giá")]
         if c0 is not None:
             marks.append(("C", c0, f"Testing Supply: kiểm tra cung {vn_ts(dates[c0])}"))
@@ -1188,7 +1371,7 @@ def _accumulation_phases(
                     struct[t] = -1
                 range_col[t] = rid
         if e0 is not None:
-            why = f"Markup: giá thoát khỏi TR#{rid} {vn_ts(dates[e0])}"
+            why = f"{'Markup Resumption' if v.is_reaccumulation else 'Markup'}: giá thoát khỏi TR#{rid} {vn_ts(dates[e0])}"
             t = e0
             while t <= last and (t == e0 or log_phase[t] == "E" or pd.isna(log_phase[t])) and t < next_range:
                 phase[t], reason[t] = "E", why
@@ -1263,10 +1446,10 @@ def build_revision(
     phases: PhaseResult, stages: StageResult, distribution: list[Event], swings: list[Swing], cfg: Config,
 ) -> RevisionResult:
     rng_by_id = {r.range_id: r for r in ranges}
-    hyps = _trend_hypotheses(df, stages, ranges, events, swings, distribution, cfg)
+    lps, lps_cands = _lps_events(df, ranges, events, swings, cfg)
+    hyps = _trend_hypotheses(df, stages, ranges, events, swings, distribution, cfg, lps)
     scs_raw, sc_others = _selling_climaxes(df, stages, cfg)
     springs, spring_cands = _extended_springs(df, ranges, hyps, scs_raw, cfg)
-    lps, lps_cands = _lps_events(df, ranges, events, swings, cfg)
     springs = _with_ids(springs, rng_by_id, "EXT")
     lps = _with_ids(lps, rng_by_id, "V2")
     lps_cands = _with_ids(lps_cands, rng_by_id, "V2C")

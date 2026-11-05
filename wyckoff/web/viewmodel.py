@@ -44,7 +44,7 @@ RECLAIM_TEXT = "Lấy lại kháng cự với volume cao sau khi thoát xuống"
 EXTENDED_SPRING_TEXT = "Thoát xuống rồi quay lại với demand (Spring kéo dài)"
 LPS_TEXT = "Điều chỉnh về hỗ trợ, cung yếu đi, cầu quay lại"
 PHASE_POTENTIAL_TITLE = "Thoát xuống, chờ xác nhận"
-STATUS_VN_LABEL = {POTENTIAL: " (tiềm năng)", CONFIRMED: "", REJECTED: " (đã bác bỏ)"}
+STATUS_VN_LABEL = {POTENTIAL: " (tiềm năng)", DEVELOPING: " (đang hình thành)", CONFIRMED: "", REJECTED: " (đã bác bỏ)"}
 # Sự kiện gắn nhãn phía trên nến; còn lại phía dưới
 EVENTS_ABOVE = {EventType.AR.value, EventType.SOS.value, EventType.UTAD.value, EventType.UT.value}
 
@@ -111,14 +111,14 @@ def stage_segments(result: AnalysisResult) -> list[dict[str, Any]]:
                 short = "TR ?"
             kind, label = "range", f"{short}?" if status == POTENTIAL and short != "TR ?" else short
             if verdict is not None and verdict.status == POTENTIAL:
-                label = "Acc?"
+                label = "Re-acc?" if verdict.is_reaccumulation else "Acc?"
         elif g.stage in TREND_STAGES:
             h = hyp_by_start.get(g.start_idx)
             status = h.status if h is not None else CONFIRMED
             side = "up" if g.stage == "Markup" else "down"
             if status == REJECTED:
                 kind, label = "none", ""
-            elif status == POTENTIAL:
+            elif status in (POTENTIAL, DEVELOPING):
                 kind, label = f"{side}_potential", f"{g.stage}?"
             else:
                 kind, label = side, g.stage
@@ -128,10 +128,11 @@ def stage_segments(result: AnalysisResult) -> list[dict[str, Any]]:
     # Range đã xác nhận hoặc đang hình thành Accumulation: một đoạn liền từ đầu range đến trước Markup, đè lên các đoạn cũ
     for rid in sorted(result.revision.range_verdicts):
         v = result.revision.range_verdicts[rid]
+        name = "reaccumulation" if v.is_reaccumulation else "accumulation"
         if v.status == CONFIRMED:
-            out = _overlay_segment(out, {"kind": "accumulation", "label": v.structure_type, "i0": v.start_idx, "i1": v.end_idx})
+            out = _overlay_segment(out, {"kind": name, "label": v.structure_type, "i0": v.start_idx, "i1": v.end_idx})
         elif v.status == DEVELOPING:
-            out = _overlay_segment(out, {"kind": "accumulation_developing", "label": "Accumulation?", "i0": v.start_idx, "i1": v.end_idx})
+            out = _overlay_segment(out, {"kind": f"{name}_developing", "label": "Re-accumulation?" if v.is_reaccumulation else "Accumulation?", "i0": v.start_idx, "i1": v.end_idx})
     return out
 
 
@@ -160,7 +161,7 @@ def stage_view(current: dict[str, Any], history: list[dict[str, Any]], trend: di
     in_range = current["range_id"] is not None
     status = trend["status"] if trend is not None and not in_range else None
     view = "range" if in_range else "trend" if current["stage"] in TREND_STAGES and status != REJECTED else "transition"
-    trend_title = f"{current['stage']} tiềm năng" if status == POTENTIAL else current["stage"]
+    trend_title = {POTENTIAL: f"{current['stage']} tiềm năng", DEVELOPING: f"{current['stage']} đang hình thành"}.get(status, current["stage"])
     title = {"range": " hoặc ".join(current["candidates"]), "trend": trend_title, "transition": "Chưa có xu hướng rõ"}[view]
     dist = current.get("distribution_phase")
     dist_view = None if not dist else {**phase_view(dist["phase"]), "since": dist["since"], "reason": dist["reason"],
@@ -169,9 +170,9 @@ def stage_view(current: dict[str, Any], history: list[dict[str, Any]], trend: di
            "last_resolved": None if last is None else {
                "range_id": last["range_id"], "date": last["resolved_date"],
                "label": last.get("revised_type") or (last["structure_type"] or last["stage"] or "") + STATUS_VN_LABEL.get(last.get("revision_status"), "")}}
-    is_markdown = status is not None and current["stage"] == "Markdown"
-    out["markdown_conditions"] = trend.get("conditions", []) if is_markdown else []
-    out["markdown_supporting"] = trend.get("supporting", []) if is_markdown else []
+    out["trend_conditions"] = trend.get("conditions", []) if status is not None else []
+    out["trend_supporting"] = trend.get("supporting", []) if status is not None else []
+    out["trend_state"] = trend.get("state") if status is not None else None
     if status is not None:
         out["reason"] = trend["reason"]
     if status == REJECTED:
@@ -253,6 +254,7 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
         target_down = {**target_down, "reached": close <= target_down["conservative"]}
     stage = stage_view(payload["current_stage"], payload["stage_history"], revision["trend"])
     stage["accumulation"] = revision["accumulation"]
+    stage["market"] = revision["market"]
     phase_info = phase_view(revision["phase"]["phase"])
     if revision["phase"]["phase"] is None and stage["view"] == "range":
         phase_info["title"] = "Trading Range chưa xác định"

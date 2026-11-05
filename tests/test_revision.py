@@ -238,6 +238,145 @@ def test_support_break_cancels_demand_mark() -> None:
     assert v.demand_idx is None or v.demand_idx > n + len(rise)
 
 
+def _uptrend(start: float = 22.6, legs: int = 5) -> tuple[list[float], list[float]]:
+    """Tăng từng nhịp: phiên tăng volume cao, nhịp điều chỉnh ngắn volume thấp, đỉnh và đáy cao dần."""
+    closes: list[float] = []
+    mult: list[float] = []
+    p = start
+    for _ in range(legs):
+        for _ in range(8):
+            p += 0.35
+            closes.append(p)
+            mult.append(1.8)
+        for _ in range(7):
+            p -= 0.12
+            closes.append(p)
+            mult.append(0.6)
+    return closes, mult
+
+
+def _markup_frame(legs: int = 5, tail: list[float] | None = None) -> pd.DataFrame:
+    base = DECLINE + _range_closes()
+    up, mult = _uptrend(legs=legs)
+    return _frame(base + up + (tail or []), overrides={len(base) + i: m for i, m in enumerate(mult)})
+
+
+def _markup(res):
+    return next(h for h in res.revision.hypotheses if h.stage == "Markup" and h.source == "range_exit")
+
+
+def test_markup_confirmed_through_several_swings() -> None:
+    res = analyze(_markup_frame(), _cfg())
+    h = _markup(res)
+    assert [v.status for v in h.history] == [POTENTIAL, DEVELOPING, CONFIRMED]
+    met = {c.key: c.met for c in h.conditions}
+    assert met["hh_hl_multi"] and met["support"] and met["dominance"] and met["maintained"]
+    assert h.state in ("Established Markup", "Extended Markup")
+
+
+def test_few_strong_sessions_are_not_markup() -> None:
+    """Một vài phiên tăng mạnh, chưa có nhịp điều chỉnh: chỉ là tiềm năng."""
+    up, mult = _uptrend(legs=1)
+    base = DECLINE + _range_closes()
+    res = analyze(_frame(base + up[:8], overrides={len(base) + i: m for i, m in enumerate(mult[:8])}), _cfg())
+    assert _markup(res).status == POTENTIAL and _markup(res).state == "Early Markup"
+
+
+def test_markup_without_base_stays_potential() -> None:
+    """Tăng theo SMA50 mà không có nền giá trước đó thì không xác nhận được."""
+    up, mult = _uptrend(start=10.0, legs=8)
+    res = analyze(_frame(list(np.linspace(14.0, 10.0, 60)) + up, overrides={60 + i: m for i, m in enumerate(mult)}), _cfg())
+    sma = [h for h in res.revision.hypotheses if h.stage == "Markup" and h.source == "sma"]
+    assert sma and all(h.status != CONFIRMED for h in sma)
+    assert all(not {c.key: c.met for c in h.conditions}.get("prior_structure", False) for h in sma if h.conditions)
+
+
+def test_markup_weakening_on_lower_high() -> None:
+    """Đã xác nhận rồi tạo đỉnh thấp hơn: suy yếu, chưa phải bác bỏ."""
+    up, _ = _uptrend(legs=5)
+    tail = [up[-1] - 0.2 * i for i in range(1, 8)] + [up[-1] - 1.4 + 0.15 * i for i in range(1, 7)] + [up[-1] - 0.5 - 0.2 * i for i in range(1, 8)]
+    res = analyze(_markup_frame(tail=tail), _cfg())
+    h = _markup(res)
+    assert CONFIRMED in [v.status for v in h.history]
+    assert h.status == CONFIRMED and h.state == "Markup Weakening"
+
+
+def test_markup_rejected_below_support() -> None:
+    drop = [24.0, 22.0, 20.0, 19.0, 18.0, 17.0, 16.0]
+    res = analyze(_markup_frame(legs=2, tail=drop), _cfg())
+    h = _markup(res)
+    assert h.status == REJECTED and "thủng support" in h.reason
+
+
+def _reacc_frame(legs: int = 5, after: list[float] | None = None, after_vol: float = 1.0) -> tuple[pd.DataFrame, float, float]:
+    """Markup theo từng nhịp, rồi đi ngang ở vùng cao, rồi `after`. Trả về (frame, support, resistance) dự kiến."""
+    base = DECLINE + _range_closes()
+    up, mult = _uptrend(legs=legs)
+    top = up[-1]
+    low, high = top - 2.0, top
+    side = _range_closes(low=low, high=high)
+    overrides = {len(base) + i: m for i, m in enumerate(mult)}
+    closes = base + up + side + (after or [])
+    for i in range(len(after or [])):
+        overrides[len(closes) - len(after) + i] = after_vol
+    return _frame(closes, overrides=overrides), low, high
+
+
+def _reacc_verdict(res):
+    return next((v for v in res.revision.range_verdicts.values() if v.is_reaccumulation), None)
+
+
+def test_range_after_clear_markup_is_reaccumulation_structure_not_trend() -> None:
+    df, _, _ = _reacc_frame()
+    res = analyze(df, _cfg())
+    v = _reacc_verdict(res)
+    assert v is not None and v.status in (POTENTIAL, DEVELOPING) and v.leaning is not None
+    assert {c.key: c.met for c in v.conditions}["structure"]
+    market = res.revision.market_view(res.current_stage().range_id, res.current_stage().range_id is not None, res.df.index[-1])
+    assert market["state"] == "Markup" and "Re-accumulation" in market["structure"]    # trạng thái vẫn là Markup
+
+
+def test_markup_then_range_is_not_automatically_reaccumulation() -> None:
+    """Markup chưa rõ (chưa có HH-HL) thì range sau đó chưa phải Re-accumulation."""
+    base = DECLINE + _range_closes()
+    up, mult = _uptrend(legs=1)
+    top = up[7]
+    res = analyze(_frame(base + up[:8] + _range_closes(low=top - 2.0, high=top), overrides={len(base) + i: m for i, m in enumerate(mult[:8])}), _cfg())
+    assert _reacc_verdict(res) is None
+
+
+def test_reaccumulation_rejected_when_uptrend_structure_breaks() -> None:
+    df, low, _ = _reacc_frame(after=[low_step for low_step in np.linspace(29.0, 22.0, 12)])
+    res = analyze(df, _cfg())
+    v = _reacc_verdict(res)
+    assert v is not None and v.status == REJECTED
+
+
+def test_reaccumulation_confirmed_after_breakout_held() -> None:
+    _, _, high = _reacc_frame()
+    tail = [high + 0.5, high + 1.2, high + 1.6, high + 1.8, high + 1.5, high + 1.3, high + 1.2, high + 1.3, high + 1.6, high + 2.0, high + 2.3, high + 2.5,
+            high + 2.3, high + 2.1, high + 2.0, high + 2.2, high + 2.6, high + 3.0, high + 3.3, high + 3.5]
+    df, _, _ = _reacc_frame(after=tail, after_vol=1.8)
+    res = analyze(df, _cfg())
+    v = _reacc_verdict(res)
+    assert v is not None and CONFIRMED in [x.status for x in v.history] and v.leaning == "Re-accumulation"
+    names = [g.phase for g in res.revision.phase_segments if g.range_id == v.range_id]
+    assert names and names[-1] == "E"
+    assert any(g.reason.startswith("Markup Resumption") for g in res.revision.phase_segments)
+
+
+def test_view_marks_reaccumulation_segment_and_market() -> None:
+    from wyckoff.agent.payload import build_payload
+    from wyckoff.web.viewmodel import build_view
+
+    df, _, _ = _reacc_frame()
+    res = analyze(df, _cfg())
+    view = build_view(res, build_payload(res, "X"), "X", "1D")
+    assert view["stage"]["market"]["state"] == "Markup"
+    assert view["stage"]["accumulation"]["structure_type"] == "Re-accumulation"
+    assert any("Re-acc" in s["label"] for s in view["stage_segments"])
+
+
 def test_rejected_extended_spring_falls_back_to_potential() -> None:
     n = len(_range_closes())
     closes = _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 19.3, 20.8, 21.0, 20.0, 18.0, 16.5, 16.0, 15.5]
@@ -543,7 +682,7 @@ def test_sos_potential_until_follow_through() -> None:
     assert hist[0].status == POTENTIAL and hist[0].idx == sos.idx
 
 
-CUTS = [60, 80, 95, 100, 110, 120, 140, 150, 155, 160, 165, 170, 180, 200]
+CUTS = [60, 80, 95, 100, 110, 120, 140, 150, 155, 160, 165, 170, 180, 190, 200, 210, 220, 230, 250, 270, 290, 310]
 
 
 def _scenarios() -> dict[str, tuple[pd.DataFrame, Config]]:
@@ -552,6 +691,8 @@ def _scenarios() -> dict[str, tuple[pd.DataFrame, Config]]:
     df_sos, _ = _sos_then_pullback()
     df_acc, _ = _sos_then_pullback(prefix=DECLINE)
     return {
+        "reacc": (_reacc_frame(after=list(np.linspace(29.0, 22.0, 12)))[0], _cfg()),
+        "markup": (_markup_frame(), _cfg()),
         "accumulation": (_append(df_acc, [24.0, 22.0, 20.0, 18.0, 17.0, 16.0]), _cfg()),
         "climax": (_climax_frame([12.0, 11.95, 12.2, 12.8, 13.2, 13.6, 14.0, 14.2, 14.3] + [14.2] * 30 + [11.0, 10.5] * 4)[0], _cfg()),
         "downtrend": (_downtrend_frame(), _cfg()),
@@ -562,7 +703,7 @@ def _scenarios() -> dict[str, tuple[pd.DataFrame, Config]]:
     }
 
 
-@pytest.mark.parametrize("name", ["demo", "demo_close", "return", "sos", "downtrend", "climax", "accumulation"])
+@pytest.mark.parametrize("name", ["demo", "demo_close", "return", "sos", "downtrend", "climax", "accumulation", "markup", "reacc"])
 def test_no_lookahead(name: str) -> None:
     """Trạng thái tại phiên t trên dữ liệu đầy đủ = trạng thái cuối khi chạy trên dữ liệu cắt tại t."""
     df, cfg = _scenarios()[name]

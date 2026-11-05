@@ -113,13 +113,14 @@ def test_api_only_with_strict_csp(client: TestClient):
 def test_analysis_demo(client: TestClient):
     v = client.get("/api/analysis/demo").json()
     assert v["symbol"] == "DEMO" and v["phase"]["title"] == "Pha E"
-    assert v["stage"]["view"] == "trend" and v["stage"]["title"] == "Markup" and v["stage"]["structure_type"] == "Trending Up"
+    # Demo tăng thẳng, chưa có nhịp điều chỉnh tạo HH–HL: mới là tiềm năng
+    assert v["stage"]["view"] == "trend" and v["stage"]["title"] == "Markup tiềm năng" and v["stage"]["structure_type"] == "Trending Up"
     assert v["stage"]["candidates"] == [] and v["stage"]["strength"]["side"] == "demand"
     assert v["stage"]["last_resolved"]["label"].startswith("Initial Accumulation")
     assert v["target"]["direction"] == "up" and v["target_down"] is None and v["stage"]["note"] is None
     segs = v["stage_segments"]
     assert segs[0]["i0"] == 0 and segs[-1]["i1"] == len(v["bars"]) - 1 and all(a["i1"] + 1 == b["i0"] for a, b in zip(segs, segs[1:]))
-    assert [s["kind"] for s in segs][-2:] == ["accumulation", "up"] and segs[-2]["label"] == "Initial Accumulation" and segs[-1]["label"] == "Markup"
+    assert [s["kind"] for s in segs][-2:] == ["accumulation", "up_potential"] and segs[-2]["label"] == "Initial Accumulation" and segs[-1]["label"] == "Markup?"
     assert [s["status"] for s in v["phase"]["steps"]] == ["done"] * 4 + ["current"]
     assert {"SC", "AR", "ST", "Spring", "SOS"} <= {e["kind"] for e in v["events"]}
     assert v["bars"] and all(0 <= e["i"] < len(v["bars"]) for e in v["chart_events"])
