@@ -83,6 +83,7 @@ swings:
 ranges:
   max_height_atr: 6.0
   anchor_sc_ar: false        # H4b: AR xác nhận -> mở range theo đáy SC và đỉnh AR
+  pivot_source: high_low     # biên range theo pivot của high_low | close (config/v3.yaml, dùng cho dashboard)
   min_bars: 20
   min_swing_highs: 2
   min_swing_lows: 2
@@ -226,6 +227,38 @@ backtest:
   split_date: "2023-01-01"   # chẩn đoán độ ổn định: trước / sau mốc này
   rate_limit_wait_s: 65      # hết hạn mức lượt gọi theo phút (vnstock Cộng đồng: 60/phút) -> chờ rồi thử lại
   rate_limit_retries: 3
+
+revision:                    # đánh giá lại tiềm năng / xác nhận / bác bỏ: chỉ ghi nhận, không đổi pha / tin cậy / backtest
+  trend_confirm_bars: 10     # Markup: xác nhận sau tối thiểu 10 phiên ...
+  trend_confirm_atr: 3.0     #   ... và close cách mốc tham chiếu >= 3 ATR
+  trend_watch_bars: 60       # Markdown / Markup: theo dõi bác bỏ 60 phiên sau xác nhận
+  md_min_lower_highs: 1      # Markdown (5 điều kiện, docs/stage-definitions.md): số đỉnh thấp dần sau khi thủng hỗ trợ
+  md_min_lower_lows: 2       #   số đáy thấp dần sau khi thủng hỗ trợ (đáy đầu tiên luôn thấp hơn hỗ trợ)
+  md_max_retrace: 0.618      #   nhịp hồi gần nhất không quá 61,8% nhịp giảm trước đó
+  md_min_side_bars: 3        #   cần ít nhất 3 phiên tăng và 3 phiên giảm để so cung cầu
+  demand_min_vol_ratio: 1.5  # phiên demand: nến tăng, volume >= 1.5x TB20, close_pos >= 0.7
+  demand_min_close_pos: 0.7
+  spring_window: 30          # Spring kéo dài: trong 30 phiên sau phiên xác nhận thoát xuống
+  weak_break_vol_ratio: 1.0  #   chỉ mô tả: volume TB dưới support < 1.0x là thoát yếu
+  lps_window: 20             # LPS (docs/event-definitions.md): điều chỉnh bắt đầu trong 20 phiên sau SOS hoặc SOS nội bộ
+  lps_max_bars: 4            #   thủng nhẹ: tối đa 4 close liên tiếp dưới hỗ trợ
+  lps_max_depth: 0.03        #   thủng nhẹ: close không sâu quá 3% dưới hỗ trợ
+  lps_near_atr: 1.0          #   về vùng hỗ trợ: close <= hỗ trợ + 1 ATR
+  lps_confirm_bars: 5        #   phản ứng của cầu trong 5 phiên sau ứng viên
+  lps_supply_vol_ratio: 2.0  #   phiên giảm volume >= 2x TB20 ...
+  lps_supply_spread_atr: 1.5 #   ... và biên độ >= 1,5 ATR: cung còn mạnh, không phải LPS
+  lps_min_value_bn: 1.0      #   thanh khoản: giá trị giao dịch TB20 >= 1 tỷ đồng
+  lps_internal_strength: true  #   tính cả SOS nội bộ trong range làm nền cho LPS
+  acc_window: 20             # Accumulation (docs/stage-definitions.md): so sánh cung cầu trên 20 phiên gần nhất
+  acc_absorb_vol_ratio: 1.5  #   hấp thụ cung: volume >= 1,5x TB20 ở nửa dưới range, giá không giảm tương ứng
+  acc_hold_bars: 10          #   giữ hỗ trợ: tối thiểu 10 phiên sau breakout
+  acc_demand_bars: 5         #   pha D không cần SOS: 5 phiên liên tiếp cầu chiếm ưu thế, ở nửa trên range, có đáy cao hơn
+  sc_max_undercut_atr: 1.0   # SC (docs/event-definitions.md): close không thấp hơn đáy ứng viên quá 1 ATR
+  sc_confirm_window: 10      #   phản ứng tăng mạnh hoặc ổn định trong 10 phiên
+  sc_reaction_atr: 2.0       #   phản ứng tăng mạnh: close >= đáy vùng + 2 ATR
+  sc_stabilize_bars: 5       #   ổn định: tối thiểu 5 phiên không có close dưới đáy ứng viên ...
+  sc_stabilize_vol_factor: 0.5  #   ... và volume TB <= 0,5 x volume ứng viên
+  utad_watch_bars: 60        # UT/UTAD: theo dõi close vượt đỉnh upthrust 60 phiên
 
 lifecycle:                   # vòng đời event (quy chuẩn 04/11/2026) – chỉ ghi trạng thái, không đổi pha/tin cậy/backtest
   watch_bars: 60             # theo dõi vô hiệu hóa Spring / SOS / LPS tối đa 60 phiên sau xác nhận

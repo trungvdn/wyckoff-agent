@@ -156,6 +156,60 @@ function TrendBody({ strength: s }: { strength: TrendStrength }) {
   );
 }
 
+/** Markdown: 5 điều kiện xác nhận, đạt hay chưa, kèm sự kiện hỗ trợ. */
+function MarkdownConditions({ stage: s }: { stage: StageInfo }) {
+  const met = s.markdown_conditions.filter((c) => c.met).length;
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
+      <p className="m-0 text-[13px] text-muted">
+        Điều kiện xác nhận Markdown: đạt {met}/{s.markdown_conditions.length}
+      </p>
+      <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[13px] text-fg-2">
+        {s.markdown_conditions.map((c) => (
+          <li key={c.key} className="grid grid-cols-[40px_minmax(0,1fr)] gap-2">
+            <span className={cx("font-mono", c.met ? "text-pos" : "text-muted")}>{c.met ? "Đạt" : "Chưa"}</span>
+            <span>
+              {c.label} – {c.detail}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {s.markdown_supporting.length > 0 && (
+        <p className="m-0 text-[13px] text-muted">Sự kiện hỗ trợ: {s.markdown_supporting.join(", ")}.</p>
+      )}
+    </div>
+  );
+}
+
+const ACC_LEVEL: Record<NonNullable<StageInfo["accumulation"]>["level"], string> = {
+  potential: "Ứng viên",
+  developing: "Đang hình thành",
+  confirmed: "Đã xác nhận",
+  rejected: "Đã bác bỏ",
+};
+
+/** Mức Accumulation của range hiện tại: bằng chứng theo cung, cầu và cấu trúc; sự kiện không bắt buộc. */
+function AccumulationEvidence({ acc }: { acc: NonNullable<StageInfo["accumulation"]> }) {
+  return (
+    <details className="flex flex-col gap-2 border-t border-line pt-3">
+      <summary className="flex min-h-8 cursor-pointer items-center text-[13px] text-muted hover:text-fg">
+        Accumulation: {ACC_LEVEL[acc.level]} · {acc.conditions.filter((c) => c.met).length}/{acc.conditions.length} bằng chứng
+      </summary>
+      <ul className="m-0 mt-2 flex list-none flex-col gap-2 p-0 text-[13px] text-fg-2">
+        {acc.conditions.map((c) => (
+          <li key={c.key} className="grid grid-cols-[40px_minmax(0,1fr)] gap-2">
+            <span className={cx("font-mono", c.met ? "text-pos" : "text-muted")}>{c.met ? "Đạt" : "Chưa"}</span>
+            <span>
+              {c.label} – {c.detail}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {acc.supporting.length > 0 && <p className="mt-2 mb-0 text-[13px] text-muted">Sự kiện làm bằng chứng, không bắt buộc: {acc.supporting.join(", ")}.</p>}
+    </details>
+  );
+}
+
 function strengthStyle(s: TrendStrength): string {
   if (s.level === "trung bình") return "text-event border-event-dim";
   const favorsBuyers = (s.side === "demand") === (s.level === "mạnh");
@@ -182,10 +236,12 @@ export function StagePhaseCard({ stage: s, phase, confidence }: { stage: StageIn
       )}
       {inRange && <RangeBody stage={s} phase={phase} confidence={confidence} />}
       {s.view === "trend" && s.strength && <TrendBody strength={s.strength} />}
+      {s.view === "trend" && s.markdown_conditions.length > 0 && <MarkdownConditions stage={s} />}
       {!inRange && <p className="m-0 text-[13px] text-muted">{s.reason}.</p>}
+      {s.accumulation && <AccumulationEvidence acc={s.accumulation} />}
       {s.last_resolved && (
         <p className="m-0 text-[13px] text-muted">
-          Range gần nhất đã chốt: TR#{s.last_resolved.range_id} là {s.last_resolved.label} ({fmtDate(s.last_resolved.date)}).
+          Range gần nhất: TR#{s.last_resolved.range_id} là {s.last_resolved.label} ({fmtDate(s.last_resolved.date)}).
         </p>
       )}
     </Card>

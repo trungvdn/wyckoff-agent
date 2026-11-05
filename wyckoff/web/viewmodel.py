@@ -11,6 +11,7 @@ from wyckoff.phases import Structure
 from wyckoff.phases_distribution import DistStructure
 from wyckoff.pipeline import AnalysisResult
 from wyckoff.pnf import cause_effect_target, cause_effect_target_down
+from wyckoff.revision import CONFIRMED, DEVELOPING, PHASE_POTENTIAL, POTENTIAL, REJECTED
 
 # API trả toàn bộ lịch sử đã phân tích; đây chỉ là khung nhìn mặc định khi mở biểu đồ
 VIEW_BARS = {"1D": 160, "1W": 156}
@@ -40,6 +41,10 @@ EVENT_TEXT = {
     EventType.UT.value: "Phá đỉnh giả rồi yếu đi – cảnh báo nguồn cung",
 }
 RECLAIM_TEXT = "Lấy lại kháng cự với volume cao sau khi thoát xuống"
+EXTENDED_SPRING_TEXT = "Thoát xuống rồi quay lại với demand (Spring kéo dài)"
+LPS_TEXT = "Điều chỉnh về hỗ trợ, cung yếu đi, cầu quay lại"
+PHASE_POTENTIAL_TITLE = "Thoát xuống, chờ xác nhận"
+STATUS_VN_LABEL = {POTENTIAL: " (tiềm năng)", CONFIRMED: "", REJECTED: " (đã bác bỏ)"}
 # Sự kiện gắn nhãn phía trên nến; còn lại phía dưới
 EVENTS_ABOVE = {EventType.AR.value, EventType.SOS.value, EventType.UTAD.value, EventType.UT.value}
 
@@ -76,6 +81,8 @@ def phase_view(phase: str | None) -> dict[str, Any]:
         title = "Chưa có cấu trúc"
     elif phase == "invalid":
         title = "Cấu trúc vô hiệu"
+    elif phase == PHASE_POTENTIAL:
+        title = PHASE_POTENTIAL_TITLE
     else:
         title = f"Pha {phase}"
     cur = PHASE_STEPS.index(phase) if phase in PHASE_STEPS else -1
@@ -85,20 +92,60 @@ def phase_view(phase: str | None) -> dict[str, Any]:
 
 
 def stage_segments(result: AnalysisResult) -> list[dict[str, Any]]:
-    """Các đoạn giai đoạn cho dải trên biểu đồ. Range đã thoát ghi nhãn đã chốt, đoạn đó vẫn là thời gian chưa phân định."""
+    """Các đoạn giai đoạn cho dải trên biểu đồ, đánh giá lại bằng dữ liệu đến phiên cuối (biểu đồ hồi cứu):
+    range đã thoát ghi nhãn theo hướng thoát, thêm "?" khi còn tiềm năng, về "TR ?" khi hướng thoát bị bác bỏ.
+    Markup / Markdown còn tiềm năng vẽ nhạt, bị bác bỏ thì không tô."""
     labels = {r.range_id: r for r in result.stages.ranges}
+    hyp_by_start = {h.start_idx: h for h in result.revision.hypotheses}
     out = []
     for g in result.stages.segments:
         if g.range_id is not None:
             r = labels.get(g.range_id)
             name = None if r is None or r.resolved_idx is None else (r.structure_type or r.stage)
-            kind, label = "range", STAGE_SHORT.get(name, "TR ?")
+            h = result.revision.hypothesis_of_range(g.range_id)
+            status = h.status if h is not None else None
+            short = STAGE_SHORT.get(name, "TR ?") if status != REJECTED else "TR ?"
+            # Nhãn tích lũy chỉ lấy từ mức Accumulation của range, không suy từ hướng thoát
+            verdict = result.revision.range_verdicts.get(g.range_id)
+            if short in ("Acc", "Re-acc"):
+                short = "TR ?"
+            kind, label = "range", f"{short}?" if status == POTENTIAL and short != "TR ?" else short
+            if verdict is not None and verdict.status == POTENTIAL:
+                label = "Acc?"
         elif g.stage in TREND_STAGES:
-            kind, label = ("up" if g.stage == "Markup" else "down"), g.stage
+            h = hyp_by_start.get(g.start_idx)
+            status = h.status if h is not None else CONFIRMED
+            side = "up" if g.stage == "Markup" else "down"
+            if status == REJECTED:
+                kind, label = "none", ""
+            elif status == POTENTIAL:
+                kind, label = f"{side}_potential", f"{g.stage}?"
+            else:
+                kind, label = side, g.stage
         else:
             kind, label = "none", ""
         out.append({"kind": kind, "label": label, "i0": g.start_idx, "i1": g.end_idx})
+    # Range đã xác nhận hoặc đang hình thành Accumulation: một đoạn liền từ đầu range đến trước Markup, đè lên các đoạn cũ
+    for rid in sorted(result.revision.range_verdicts):
+        v = result.revision.range_verdicts[rid]
+        if v.status == CONFIRMED:
+            out = _overlay_segment(out, {"kind": "accumulation", "label": v.structure_type, "i0": v.start_idx, "i1": v.end_idx})
+        elif v.status == DEVELOPING:
+            out = _overlay_segment(out, {"kind": "accumulation_developing", "label": "Accumulation?", "i0": v.start_idx, "i1": v.end_idx})
     return out
+
+
+def _overlay_segment(segments: list[dict[str, Any]], new: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for s in segments:
+        if s["i1"] < new["i0"] or s["i0"] > new["i1"]:
+            out.append(s)
+            continue
+        if s["i0"] < new["i0"]:
+            out.append({**s, "i1": new["i0"] - 1})
+        if s["i1"] > new["i1"]:
+            out.append({**s, "i0": new["i1"] + 1})
+    return sorted(out + [new], key=lambda s: s["i0"])
 
 
 def current_distribution_structure(result: AnalysisResult) -> DistStructure | None:
@@ -106,18 +153,46 @@ def current_distribution_structure(result: AnalysisResult) -> DistStructure | No
     return None if pd.isna(sid) else result.distribution_phases.structures[int(sid)]
 
 
-def stage_view(current: dict[str, Any], history: list[dict[str, Any]]) -> dict[str, Any]:
-    """Giai đoạn hiện tại cho dashboard. `current`, `history`: payload.current_stage, payload.stage_history."""
+def stage_view(current: dict[str, Any], history: list[dict[str, Any]], trend: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Giai đoạn hiện tại cho dashboard. `current`, `history`: payload.current_stage, payload.stage_history.
+    `trend`: payload.revision.trend. Xu hướng bị bác bỏ hiển thị như chưa có xu hướng, nêu rõ lý do."""
     last = history[-1] if history else None
     in_range = current["range_id"] is not None
-    view = "range" if in_range else "trend" if current["stage"] in TREND_STAGES else "transition"
-    title = {"range": " hoặc ".join(current["candidates"]), "trend": current["stage"], "transition": "Chưa có xu hướng rõ"}[view]
+    status = trend["status"] if trend is not None and not in_range else None
+    view = "range" if in_range else "trend" if current["stage"] in TREND_STAGES and status != REJECTED else "transition"
+    trend_title = f"{current['stage']} tiềm năng" if status == POTENTIAL else current["stage"]
+    title = {"range": " hoặc ".join(current["candidates"]), "trend": trend_title, "transition": "Chưa có xu hướng rõ"}[view]
     dist = current.get("distribution_phase")
     dist_view = None if not dist else {**phase_view(dist["phase"]), "since": dist["since"], "reason": dist["reason"],
                                        "events": [e["kind"] for e in dist["events"]]}
-    return {**current, "view": view, "title": title, "distribution_phase": dist_view,
-            "last_resolved": None if last is None else {
-                "range_id": last["range_id"], "label": last["structure_type"] or last["stage"], "date": last["resolved_date"]}}
+    out = {**current, "view": view, "title": title, "distribution_phase": dist_view, "revision_status": status,
+           "last_resolved": None if last is None else {
+               "range_id": last["range_id"], "date": last["resolved_date"],
+               "label": last.get("revised_type") or (last["structure_type"] or last["stage"] or "") + STATUS_VN_LABEL.get(last.get("revision_status"), "")}}
+    is_markdown = status is not None and current["stage"] == "Markdown"
+    out["markdown_conditions"] = trend.get("conditions", []) if is_markdown else []
+    out["markdown_supporting"] = trend.get("supporting", []) if is_markdown else []
+    if status is not None:
+        out["reason"] = trend["reason"]
+    if status == REJECTED:
+        out["strength"] = None
+        out["structure_type"] = f"{current['stage']} đã bác bỏ"
+    return out
+
+
+def _chart_event(e: Any, above_set: set[str], current: bool, status: str) -> dict[str, Any]:
+    above = e.kind.value in above_set
+    return {"kind": e.kind.value, "t": _date(e.date), "i": e.idx, "price": _f(e.high if above else e.low),
+            "above": above, "current": current, "status": status}
+
+
+def _event_text(e: dict[str, Any]) -> str:
+    details = e["details"]
+    if details.get("spring_type") == "extended":
+        return EXTENDED_SPRING_TEXT
+    if details.get("lps_definition"):
+        return LPS_TEXT
+    return RECLAIM_TEXT if details.get("reclaim") else EVENT_TEXT.get(e["kind"], e["kind"])
 
 
 def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf: str,
@@ -129,22 +204,29 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
          "v": int(r.volume), "vr": _f(r.vol_ratio), "vma": None if pd.isna(r.vol_ma) else int(r.vol_ma)}
         for ts, r in df.iterrows()
     ]
+    rv = result.revision
     struct_ids = {(e.kind, e.idx) for e in s.events} if s is not None else set()
-    chart_events = [
-        {"kind": e.kind.value, "t": _date(e.date), "i": e.idx, "price": _f(e.high if e.kind.value in EVENTS_ABOVE else e.low),
-         "above": e.kind.value in EVENTS_ABOVE, "current": (e.kind, e.idx) in struct_ids}
-        for e in result.events if e.kind != EventType.SC_FAILED
-    ]
+    cur_rid = s.rng.range_id if s is not None and s.rng is not None else None
+    # LPS của nhật ký không đạt định nghĩa mới thì không phải LPS: không vẽ (LPS mới trùng phiên được vẽ ở dưới)
+    chart_events = [_chart_event(e, EVENTS_ABOVE, (e.kind, e.idx) in struct_ids, rv.status_of(e))
+                    for e in result.events if e.kind not in (EventType.SC_FAILED, EventType.LPS)]
+    # Sự kiện mới của lớp đánh giá lại, và ứng viên đang chờ xác nhận (ứng viên đã hết hạn không vẽ).
+    # SC, PS, AR, ST trùng phiên với nhật ký chỉ vẽ một lần.
+    shown = {(c["kind"], c["i"]) for c in chart_events}
+    for e in rv.events:
+        if (e.kind.value, e.idx) not in shown:
+            shown.add((e.kind.value, e.idx))
+            chart_events.append(_chart_event(e, EVENTS_ABOVE, e.range_id == cur_rid, rv.status_of(e)))
+    for e in result.candidates + rv.candidates:
+        if rv.status_of(e) == POTENTIAL and (e.kind.value, e.idx) not in shown:
+            shown.add((e.kind.value, e.idx))
+            chart_events.append(_chart_event(e, EVENTS_ABOVE, e.range_id == cur_rid, POTENTIAL))
     d = current_distribution_structure(result)
     stage_name = payload["current_stage"]["stage"]
     if d is not None and stage_name != "Markup":
         seen = {(c["kind"], c["i"]) for c in chart_events}
-        chart_events += [
-            {"kind": e.kind.value, "t": _date(e.date), "i": e.idx, "price": _f(e.high if e.kind.value in DIST_EVENTS_ABOVE else e.low),
-             "above": e.kind.value in DIST_EVENTS_ABOVE, "current": True}
-            for e in d.events if e.kind != EventType.BC_FAILED and (e.kind.value, e.idx) not in seen
-        ]
-    cur_rid = s.rng.range_id if s is not None and s.rng is not None else None
+        chart_events += [_chart_event(e, DIST_EVENTS_ABOVE, True, rv.status_of(e))
+                         for e in d.events if e.kind != EventType.BC_FAILED and (e.kind.value, e.idx) not in seen]
     ranges = [
         {"id": r.range_id, "support": _f(r.support), "resistance": _f(r.resistance),
          "i0": r.start_idx, "i1": r.end_idx, "active": r.end_confirmed_idx is None,
@@ -152,13 +234,15 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
         for r in result.ranges
     ]
     cp = payload["current_phase"]
+    revision = payload["revision"]
     events = [
-        {"id": e["id"], "kind": e["kind"],
-         "text": RECLAIM_TEXT if e["details"].get("reclaim") else EVENT_TEXT.get(e["kind"], e["kind"]), "date": e["date"],
+        {"id": e["uid"], "kind": e["kind"], "text": _event_text(e), "date": e["date"],
          "confirmed_date": e["confirmed_date"], "close": e["close"], "vol_ratio": e["vol_ratio"],
-         "spread_atr": e["spread_atr"], "close_pos": e["close_pos"]}
-        for e in payload["evidence_events"]
+         "spread_atr": e["spread_atr"], "close_pos": e["close_pos"], "status": e["assessment"]}
+        for e in {(x["kind"], x["date"]): x for x in revision["events"] + payload["evidence_events"]
+                  if x["kind"] != EventType.LPS.value or x["details"].get("lps_definition")}.values()
     ]
+    events.sort(key=lambda e: e["date"])
     exchange = result.cfg.data.exchange
     target = cause_effect_target(df, s, result.cfg.pnf, exchange) if s is not None and stage_name != "Markdown" else None
     target_down = cause_effect_target_down(df, d, result.cfg.pnf, exchange) if d is not None and stage_name != "Markup" else None
@@ -167,7 +251,11 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
         target = {**target, "reached": close >= target["conservative"]}
     if target_down is not None:
         target_down = {**target_down, "reached": close <= target_down["conservative"]}
-    stage = stage_view(payload["current_stage"], payload["stage_history"])
+    stage = stage_view(payload["current_stage"], payload["stage_history"], revision["trend"])
+    stage["accumulation"] = revision["accumulation"]
+    phase_info = phase_view(revision["phase"]["phase"])
+    if revision["phase"]["phase"] is None and stage["view"] == "range":
+        phase_info["title"] = "Trading Range chưa xác định"
     dist_phase = (stage["distribution_phase"] or {}).get("phase")
     stage["note"] = H8_NOTE if stage["view"] == "range" and "C" in (cp["phase"], dist_phase) else None
     market = payload.get("market")
@@ -182,10 +270,12 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
         "view_from": default_view_start(result, tf, s),
         "chart_events": chart_events,
         "ranges": ranges,
-        "phase_segments": [{"phase": g.phase, "i0": g.start_idx, "i1": g.end_idx} for g in result.phases.segments],
+        "phase_segments": [{"phase": g.phase, "i0": g.start_idx, "i1": g.end_idx} for g in rv.phase_segments],
         "stage_segments": stage_segments(result),
+        "revision_changes": revision["changes"],
         "stage": stage,
-        "phase": {**phase_view(cp["phase"]), "since": cp["since"], "reason": cp["reason"],
+        "phase": {**phase_info, "since": revision["phase"]["since"],
+                  "reason": revision["phase"]["reason"] or "Chưa có bằng chứng về quá trình hấp thụ cung",
                   "support": cp["support"], "resistance": cp["resistance"], "atr": cp["atr"],
                   "range_context": cp["range_context"]},
         "confidence": payload["confidence"],

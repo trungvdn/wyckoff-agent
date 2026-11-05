@@ -7,16 +7,17 @@ from wyckoff.config import SwingConfig
 from wyckoff.detectors.models import Swing
 
 
-def find_swings(df: pd.DataFrame, cfg: SwingConfig | None = None) -> list[Swing]:
+def find_swings(df: pd.DataFrame, cfg: SwingConfig | None = None, source: str = "high_low") -> list[Swing]:
     """Pivot high tại i: high[i] > max(high[i-left:i]) và high[i] >= max(high[i+1:i+right+1]).
 
     Pivot low đối xứng. Pivot chỉ biết được ở phiên i+right (`confirmed_idx`), nên mọi
     detector dùng swing phải lọc theo `confirmed_idx <= t` để tránh look-ahead.
+    `source="close"`: pivot tính trên chuỗi close thay cho high và low.
     """
     cfg = cfg or SwingConfig()
     left, right = cfg.left, cfg.right
-    highs = df["high"].to_numpy(dtype=float)
-    lows = df["low"].to_numpy(dtype=float)
+    highs = df["close" if source == "close" else "high"].to_numpy(dtype=float)
+    lows = df["close" if source == "close" else "low"].to_numpy(dtype=float)
     dates = df.index
     n = len(df)
     swings: list[Swing] = []

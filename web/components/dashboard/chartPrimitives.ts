@@ -81,6 +81,7 @@ export interface StageStripSpec {
   i1: number;
   label: string;
   color: string;
+  alpha?: number;   // đoạn còn tiềm năng vẽ nhạt hơn
 }
 
 const STAGE_STRIP_HEIGHT = 16;
@@ -107,7 +108,7 @@ export class StageStrip implements ISeriesPrimitive<Time> {
             const left = x0 - half;
             const width = x1 - x0 + 2 * half;
             context.fillStyle = s.color;
-            context.globalAlpha = 0.45;
+            context.globalAlpha = s.alpha ?? 0.45;
             context.fillRect(left, top, width, STAGE_STRIP_HEIGHT);
             const labelX = Math.max(left, 0) + 4;
             if (s.label && left + width - labelX >= context.measureText(s.label).width + 4) {
@@ -192,13 +193,16 @@ export interface EventLabelSpec {
   low: number;
   above: boolean;     // nhãn phía trên nến (AR, SOS, UTAD), còn lại phía dưới
   current: boolean;   // thuộc cấu trúc hiện tại
+  status: "potential" | "confirmed" | "rejected";
 }
 
 const OLD_EVENT_ALPHA = 0.55;
+const REJECTED_EVENT_ALPHA = 0.3;
 const TEXT_H = 14;
 
 /** Nhãn sự kiện Wyckoff: tam giác chỉ vào nến + tên. Nhãn gần nhau được xếp tầng, không đè nhau và không
- *  bị cắt ở mép. Nhìn rộng hơn `denseBars` nến thì sự kiện của cấu trúc cũ chỉ còn tam giác. */
+ *  bị cắt ở mép. Nhìn rộng hơn `denseBars` nến thì sự kiện của cấu trúc cũ chỉ còn tam giác.
+ *  Đã xác nhận: tam giác đặc. Tiềm năng: tam giác rỗng, tên có "?". Bị bác bỏ: mờ, gạch ngang tên. */
 export class EventLabels implements ISeriesPrimitive<Time> {
   private host: SeriesAttachedParameter<Time> | null = null;
   private readonly views: IPrimitivePaneView[];
@@ -216,6 +220,7 @@ export class EventLabels implements ISeriesPrimitive<Time> {
         target.useMediaCoordinateSpace(({ context, mediaSize }) => {
           context.font = font;
           context.fillStyle = color;
+          context.strokeStyle = color;
           context.textAlign = "center";
           const placed: { x: number; y: number; w: number }[] = [];
           for (const e of ordered) {
@@ -225,21 +230,24 @@ export class EventLabels implements ISeriesPrimitive<Time> {
             if (x === null || y === null) continue;
             const dir = e.above ? -1 : 1;
             const tip = y + dir * 5;
-            context.globalAlpha = e.current ? 1 : OLD_EVENT_ALPHA;
+            context.globalAlpha = e.status === "rejected" ? REJECTED_EVENT_ALPHA : e.current ? 1 : OLD_EVENT_ALPHA;
             context.beginPath();
             context.moveTo(x, tip);
             context.lineTo(x + 5, tip + dir * 8);
             context.lineTo(x - 5, tip + dir * 8);
             context.closePath();
-            context.fill();
+            if (e.status === "potential") context.stroke();
+            else context.fill();
             if (!e.current && dense) continue;
 
-            const w = context.measureText(e.kind).width;
+            const text = e.status === "potential" ? `${e.kind}?` : e.kind;
+            const w = context.measureText(text).width;
             const tx = Math.min(Math.max(x, w / 2 + 2), mediaSize.width - w / 2 - 2);
             let ty = tip + dir * (e.above ? 12 : 21);
             while (placed.some((p) => Math.abs(p.x - tx) < (p.w + w) / 2 + 4 && Math.abs(p.y - ty) < TEXT_H)) ty += dir * TEXT_H;
             placed.push({ x: tx, y: ty, w });
-            context.fillText(e.kind, tx, ty);
+            context.fillText(text, tx, ty);
+            if (e.status === "rejected") context.fillRect(tx - w / 2, ty - 4, w, 1);
           }
           context.globalAlpha = 1;
         });

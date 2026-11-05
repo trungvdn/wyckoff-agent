@@ -186,7 +186,7 @@ Chỉ **ghi nhận**, không đổi pha / tin cậy / backtest: `result.events` 
   Chỉ SC và Spring ghi mốc DETECTED/CANDIDATE trước xác nhận (vì chỉ hai loại này ghi cả candidate thất bại; loại khác biết từ phiên xác nhận).
 - **Vô hiệu hóa sau xác nhận** (trong `lifecycle.watch_bars` = 60 phiên): SC ← có SC failed (PS của SC đó theo);
   Spring ← close < đáy Spring − `phase.spring_invalid_atr` ATR (Test theo); SOS ← close dưới mức vô hiệu pha D (`phase.d_invalid_mode`, mặc định giữa range);
-  LPS ← close < đáy LPS − `lifecycle.lps_invalid_atr` (0,5) ATR. AR, ST, UTAD chưa có quy tắc vô hiệu.
+  LPS ← close < đáy LPS − `lifecycle.lps_invalid_atr` (0,5) ATR. AR, ST ← SC. UT/UTAD được đánh giá trong `wyckoff/revision.py`.
 - **ID ổn định** `event_id`: `<LOẠI>-<yyyymmdd>[-TR<ngày bắt đầu range>][-SC|-SPRING|-SOS<ngày event gốc>][-RECLAIM]` – chỉ dựa vào ngày,
   không đổi khi đổi `--start` (range_id thì có thể đổi).
 - **Quan hệ**: `related_event_ids` (PS/AR/ST/SC failed ↔ SC, Test ↔ Spring, LPS ↔ SOS), `test_of_event_id` (ST → SC, Test → Spring);
@@ -195,6 +195,12 @@ Chỉ **ghi nhận**, không đổi pha / tin cậy / backtest: `result.events` 
   `tests/test_lifecycle.py::test_lifecycle_no_lookahead`: trạng thái tại t trên dữ liệu đầy đủ == trạng thái cuối khi chỉ có dữ liệu đến t.
 - Đầu ra: `<MÃ>_events.csv` thêm cột `event_id, status, history, invalidated_date, related_event_ids, test_of_event_id, structure_id`
   và gồm cả candidate; payload v5 thêm `uid, status, status_reason, related` cho từng sự kiện bằng chứng (prompt chưa đổi).
+
+## Đánh giá lại nhãn (`wyckoff/revision.py`, chỉ ghi nhận)
+
+Mỗi nhãn đi qua tiềm năng → xác nhận → bác bỏ theo dữ liệu về sau: Markdown / Markup, Spring kéo dài, LPS reclaim, SOS, UT/UTAD và các sự kiện khác.
+Dashboard vẽ theo trạng thái cuối (`result.revision`); backtest và điểm tin cậy vẫn dùng nhật ký tại từng thời điểm. Định nghĩa các giai đoạn: `docs/stage-definitions.md`. Quy tắc, số đo và giới hạn: `docs/revision-rules.md`.
+Dashboard và `run.py` mặc định dùng `config/v3.yaml` (biên range theo close); `Config()`, `config/default.yaml` và `backtest.py` giữ high_low để tái lập kết quả cũ.
 
 ## Dữ liệu
 - `vnstock` 5.x (tương thích 3.x). Nguồn chính VCI, dự phòng KBS (giá nghìn đồng, đã điều chỉnh).

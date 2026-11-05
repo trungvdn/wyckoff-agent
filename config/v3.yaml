@@ -1,0 +1,4 @@
+# Cấu hình của dashboard và run.py từ 05/11/2026: biên range theo pivot của close. Các khóa khác = mặc định.
+# Backtest và H1–H8 vẫn dùng high_low (mặc định) để tái lập được; số liệu backtest chưa đo trên cấu hình này.
+ranges:
+  pivot_source: close

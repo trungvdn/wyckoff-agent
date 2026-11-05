@@ -56,6 +56,10 @@ class RangeConfig:
     after_decline_max_return: float = -0.15  # <= -15% -> "sau nhịp giảm"
     after_rise_min_return: float = 0.30      # >= +30% -> "sau nhịp tăng"; còn lại "trung tính"
     anchor_sc_ar: bool = False               # H4b: AR xác nhận -> mở range support = đáy SC, resistance = đỉnh AR
+    pivot_source: str = "high_low"           # biên range lấy từ pivot của: high_low | close (config/v3.yaml, dashboard)
+
+
+PIVOT_SOURCES = ("close", "high_low")
 
 
 @dataclass(frozen=True)
@@ -253,6 +257,50 @@ class LifecycleConfig:
 
 
 @dataclass(frozen=True)
+class RevisionConfig:
+    """Lớp đánh giá lại (wyckoff/revision.py): tiềm năng -> xác nhận -> bác bỏ, dùng dữ liệu về sau để sửa nhãn trên biểu đồ.
+    Chỉ ghi nhận, không đổi pha / tin cậy / backtest. Ngưỡng là khám phá trên mẫu H8, chưa phải kiểm định."""
+    # Markup
+    trend_confirm_bars: int = 10      # xác nhận sau tối thiểu 10 phiên ...
+    trend_confirm_atr: float = 3.0    # ... và close cách mốc tham chiếu >= 3 ATR
+    trend_watch_bars: int = 60        # Markdown / Markup: theo dõi bác bỏ tối đa 60 phiên sau xác nhận
+    # Markdown: xác nhận khi đủ 5 điều kiện (docs/stage-definitions.md)
+    md_min_lower_highs: int = 1       # số đỉnh thấp dần tạo sau khi thủng hỗ trợ
+    md_min_lower_lows: int = 2        # số đáy thấp dần tạo sau khi thủng hỗ trợ (đáy đầu tiên luôn thấp hơn hỗ trợ)
+    md_max_retrace: float = 0.618     # nhịp hồi gần nhất hồi không quá 61,8% nhịp giảm trước đó
+    md_min_side_bars: int = 3         # cần ít nhất 3 phiên tăng và 3 phiên giảm để so cung cầu
+    # Phiên có demand (Spring kéo dài, LPS reclaim)
+    demand_min_vol_ratio: float = 1.5
+    demand_min_close_pos: float = 0.7
+    # Spring kéo dài: thoát xuống rồi quay lại với demand
+    spring_window: int = 30           # tối đa 30 phiên sau phiên xác nhận thoát
+    weak_break_vol_ratio: float = 1.0 # chỉ để mô tả: volume TB dưới support < 1.0 x TB20 là "thoát yếu"
+    # LPS (docs/event-definitions.md)
+    lps_window: int = 20              # điều chỉnh bắt đầu trong 20 phiên sau SOS hoặc SOS nội bộ
+    lps_max_bars: int = 4             # thủng nhẹ: tối đa 4 close liên tiếp dưới hỗ trợ
+    lps_max_depth: float = 0.03       # thủng nhẹ: close không sâu quá 3% dưới hỗ trợ
+    lps_near_atr: float = 1.0         # về vùng hỗ trợ: close <= hỗ trợ + 1 ATR
+    lps_confirm_bars: int = 5         # phản ứng của cầu trong 5 phiên sau ứng viên
+    lps_supply_vol_ratio: float = 2.0     # phiên giảm volume >= 2x TB20 ...
+    lps_supply_spread_atr: float = 1.5    # ... và biên độ >= 1,5 ATR: cung còn mạnh, không phải LPS
+    lps_min_value_bn: float = 1.0     # thanh khoản: giá trị giao dịch TB20 >= 1 tỷ đồng
+    lps_internal_strength: bool = True    # tính cả SOS nội bộ trong range làm nền cho LPS dưới resistance
+    # Accumulation (docs/stage-definitions.md)
+    acc_window: int = 20              # so sánh cung cầu trên 20 phiên gần nhất
+    acc_absorb_vol_ratio: float = 1.5 # hấp thụ cung: phiên volume >= 1,5x TB20 ở nửa dưới range, giá không giảm tương ứng
+    acc_hold_bars: int = 10           # giữ hỗ trợ: tối thiểu 10 phiên sau breakout không sâu quá lps_max_depth dưới resistance
+    acc_demand_bars: int = 5          # pha D không cần SOS: 5 phiên liên tiếp cầu chiếm ưu thế, ở nửa trên range, có đáy cao hơn
+    # SC (docs/event-definitions.md): ngưỡng nhận diện ứng viên dùng chung với `sc`
+    sc_max_undercut_atr: float = 1.0  # sau ứng viên, close không được thấp hơn đáy ứng viên quá 1 ATR
+    sc_confirm_window: int = 10       # phản ứng tăng mạnh hoặc ổn định trong 10 phiên
+    sc_reaction_atr: float = 2.0      # phản ứng tăng mạnh: close >= đáy vùng + 2 ATR
+    sc_stabilize_bars: int = 5        # ổn định: tối thiểu 5 phiên không có close dưới đáy ứng viên ...
+    sc_stabilize_vol_factor: float = 0.5  # ... và volume TB <= 0,5 x volume ứng viên
+    # Xác nhận theo dõi cho SOS và UT/UTAD đã có
+    utad_watch_bars: int = 60         # theo dõi close vượt đỉnh upthrust tối đa 60 phiên
+
+
+@dataclass(frozen=True)
 class DistributionConfig:
     """Sự kiện phía phân phối (wyckoff/detectors/distribution.py): chỉ ghi nhận, không đổi pha / tin cậy / backtest.
     Đối xứng với SC, AR, ST, SOS, LPS; khác: `bc_min_rise`, `bc_exclude_ceiling_locked` (hiệu chỉnh theo số đếm, không theo lợi suất)."""
@@ -354,6 +402,7 @@ class Config:
     stage: StageConfig = field(default_factory=StageConfig)
     strength: StrengthConfig = field(default_factory=StrengthConfig)
     distribution: DistributionConfig = field(default_factory=DistributionConfig)
+    revision: RevisionConfig = field(default_factory=RevisionConfig)
 
 
 def _build(cls: type[T], values: dict[str, Any] | None) -> T:
