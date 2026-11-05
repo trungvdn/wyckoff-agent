@@ -9,11 +9,11 @@ ID: `<LOẠI>-<yyyymmdd phiên event>[-TR<yyyymmdd bắt đầu range>][-SC|-SPR
 – chỉ dựa vào ngày, nên không đổi khi đổi ngày bắt đầu tải dữ liệu (range_id thì có thể đổi).
 
 Quy tắc vô hiệu hóa sau xác nhận (trong `lifecycle.watch_bars` phiên):
-- SC: có SC failed (quy tắc sẵn có) -> SC INVALIDATED; PS của SC đó INVALIDATED theo.
+- SC: có SC failed (quy tắc sẵn có) -> SC INVALIDATED; PS, AR, ST của SC đó INVALIDATED theo.
 - Spring: close < đáy Spring - phase.spring_invalid_atr x ATR; Test của Spring đó INVALIDATED theo.
 - SOS: close dưới mức vô hiệu pha D theo phase.d_invalid_mode (range_mid | support | lps_or_res_atr).
 - LPS: close < đáy LPS - lifecycle.lps_invalid_atr x ATR.
-AR, ST, UT, UTAD, SC failed: chưa có quy tắc vô hiệu sau xác nhận (giữ CONFIRMED).
+UT, UTAD, SC failed: không có quy tắc vô hiệu ở đây (UT/UTAD được đánh giá trong wyckoff/revision.py).
 """
 from __future__ import annotations
 
@@ -194,10 +194,11 @@ def annotate(
             if t is not None:
                 mark(e, t, f"close {vn_num(df['close'].iloc[t])} < đáy LPS {vn_num(e.low)} - {vn_g(k)} ATR")
 
-    # --- lan truyền: PS theo SC, Test theo Spring
+    # --- lan truyền: PS, AR, ST theo SC, Test theo Spring
     by_id = {e.event_id: e for e in evs}
     for e in evs:
-        parent_kind = {EventType.PS: EventType.SC, EventType.TEST: EventType.SPRING}.get(e.kind)
+        parent_kind = {EventType.PS: EventType.SC, EventType.AR: EventType.SC, EventType.ST: EventType.SC,
+                       EventType.TEST: EventType.SPRING}.get(e.kind)
         if parent_kind is None:
             continue
         for pid in related[e.event_id]:
@@ -261,6 +262,17 @@ def annotate_distribution(df: pd.DataFrame, events: list[Event], ranges: list[Tr
             reason = f"> đỉnh LPSY {vn_num(e.high)} + {vn_g(k)} ATR"
         if t is not None:
             inval[e.event_id] = StatusChange(EventStatus.INVALIDATED, t, df.index[t], f"close {vn_num(close[t])} {reason}")
+
+    # lan truyền: AR(d), ST(d) theo BC
+    by_id = {e.event_id: e for e in evs}
+    for e in evs:
+        if e.kind not in (EventType.AR_D, EventType.ST_D):
+            continue
+        parent = next((by_id[p] for p in related[e.event_id] if by_id[p].kind == EventType.BC and p in inval), None)
+        if parent is not None:
+            ch = inval[parent.event_id]
+            t = max(ch.idx, e.confirmed_idx)
+            inval[e.event_id] = StatusChange(EventStatus.INVALIDATED, t, df.index[t], f"BC {vn_ts(parent.date)} bị vô hiệu")
 
     return [replace(e, history=e.history + ((inval[e.event_id],) if e.event_id in inval else ()),
                     related_event_ids=tuple(dict.fromkeys(related[e.event_id])), test_of_event_id=test_of.get(e.event_id))

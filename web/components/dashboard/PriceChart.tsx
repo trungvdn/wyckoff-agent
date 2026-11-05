@@ -27,7 +27,9 @@ const DENSE_BARS = 250;       // nhìn rộng hơn: ẩn chữ sự kiện của
 const MIN_VISIBLE_BARS = 10;
 const ZOOM_STEP = 1.25;
 
-const phaseLabel = (phase: string) => (phase === "invalid" ? "Vô hiệu" : `Pha ${phase}`);
+const phaseLabel = (phase: string) => (phase === "invalid" ? "Vô hiệu" : phase === "potential" ? "Chờ xác nhận" : `Pha ${phase}`);
+const phaseBandLabel = (phase: string) => (phase === "invalid" ? "Vô hiệu" : phase === "potential" ? "Chờ" : phase);
+const POTENTIAL_STRIP_ALPHA = 0.18;
 
 type Span = { from: number; to: number };
 type PresetId = "default" | "3m" | "6m" | "1y" | "3y" | "all";
@@ -95,8 +97,9 @@ function Legend() {
           <span className="h-2.5 w-1.5 bg-phase-d/50" />
           <span className="h-2.5 w-1.5 bg-phase-e/50" />
           <span className="h-2.5 w-1.5 bg-phase-invalid/50" />
+          <span className="h-2.5 w-1.5 bg-phase-potential/50" />
         </span>
-        Pha A–E, vô hiệu
+        Pha A–E, vô hiệu, chờ xác nhận
       </li>
       <li className="flex items-center gap-1.5">
         <span aria-hidden="true" className="flex">
@@ -108,7 +111,11 @@ function Legend() {
       </li>
       <li className="flex items-center gap-1.5">
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5 0 10 10 0 10" className="fill-event" /></svg>
-        Sự kiện Wyckoff
+        Sự kiện đã xác nhận
+      </li>
+      <li className="flex items-center gap-1.5">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5 1 9.5 9.5 0.5 9.5" className="fill-none stroke-event" /></svg>
+        Tiềm năng
       </li>
       <li className="flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-muted" />Kháng cự / Hỗ trợ</li>
     </ul>
@@ -126,6 +133,7 @@ export function PriceChart({ data: d }: { data: Analysis }) {
   const cursorRef = useRef<number | null>(null);   // con trỏ điều khiển bằng bàn phím
   const [hover, setHover] = useState<number | null>(null);
   const [preset, setPreset] = useState<PresetId | null>("default");
+  const [showRejected, setShowRejected] = useState(true);
   const n = d.bars.length;
 
   useEffect(() => {
@@ -178,7 +186,7 @@ export function PriceChart({ data: d }: { data: Analysis }) {
     candles.setData(d.bars.map((b) => ({ time: b.t as Time, open: b.o, high: b.h, low: b.l, close: b.c })));
     candles.attachPrimitive(
       new PhaseBands(
-        d.phase_segments.map((g) => ({ ...g, label: g.phase === "invalid" ? "Vô hiệu" : g.phase, color: color(`phase-${g.phase.toLowerCase()}`) })),
+        d.phase_segments.map((g) => ({ ...g, label: phaseBandLabel(g.phase), color: color(`phase-${g.phase.toLowerCase()}`) })),
         `600 12px ${fontFamily}`,
       ),
     );
@@ -194,14 +202,17 @@ export function PriceChart({ data: d }: { data: Analysis }) {
 
     const event = color("event");
     candles.attachPrimitive(new EventLabels(
-      d.chart_events.map((e) => ({ ...e, high: d.bars[e.i].h, low: d.bars[e.i].l })),
+      d.chart_events.filter((e) => showRejected || e.status !== "rejected").map((e) => ({ ...e, high: d.bars[e.i].h, low: d.bars[e.i].l })),
       event,
       `600 12px ${fontFamily}`,
       DENSE_BARS,
     ));
-    const stageColor = { up: color("pos"), down: color("neg"), range: color("event-dim"), none: color("pending") };
+    const stageColor = {
+      up: color("pos"), down: color("neg"), up_potential: color("pos"), down_potential: color("neg"),
+      range: color("event-dim"), accumulation: color("event"), accumulation_developing: color("event"), none: color("pending"),
+    };
     candles.attachPrimitive(new StageStrip(
-      d.stage_segments.map((s) => ({ ...s, color: stageColor[s.kind] })),
+      d.stage_segments.map((s) => ({ ...s, color: stageColor[s.kind], alpha: s.kind.endsWith("_potential") || s.kind === "accumulation_developing" ? POTENTIAL_STRIP_ALPHA : undefined })),
       color("fg"),
       `600 11px ${fontFamily}`,
     ));
@@ -280,7 +291,7 @@ export function PriceChart({ data: d }: { data: Analysis }) {
       chartRef.current = null;
       chart.remove();
     };
-  }, [d]);
+  }, [d, showRejected]);
 
   function applySpan(span: Span) {
     chartRef.current?.chart.timeScale().setVisibleLogicalRange(span);
@@ -376,6 +387,14 @@ export function PriceChart({ data: d }: { data: Analysis }) {
           <button type="button" aria-label="Phóng to" onClick={() => zoom(1 / ZOOM_STEP)} className={cx(CONTROL, "border-line-strong bg-surface font-mono text-base text-fg hover:border-muted")}>+</button>
           <button type="button" aria-label="Thu nhỏ" onClick={() => zoom(ZOOM_STEP)} className={cx(CONTROL, "border-line-strong bg-surface font-mono text-base text-fg hover:border-muted")}>−</button>
         </div>
+        <button
+          type="button"
+          aria-pressed={showRejected}
+          onClick={() => setShowRejected((v) => !v)}
+          className={cx(CONTROL, "border-line-strong bg-surface text-fg hover:border-muted")}
+        >
+          {showRejected ? "Ẩn sự kiện bị bác bỏ" : "Hiện sự kiện bị bác bỏ"}
+        </button>
         <span className="ml-auto hidden text-xs text-muted wide:inline">Cuộn chuột để zoom · kéo để xem ngày cũ · kéo trục giá để co giãn</span>
       </div>
 

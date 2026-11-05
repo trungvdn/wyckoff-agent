@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from wyckoff.config import Config
+from wyckoff.config import PIVOT_SOURCES, Config
 from wyckoff.detectors.events import detect_selling_climax, detect_sos, detect_sos_reclaim, detect_spring
 from wyckoff.detectors.distribution import detect_distribution
 from wyckoff.detectors.lifecycle import annotate, annotate_distribution, snapshot
@@ -17,6 +17,7 @@ from wyckoff.indicators.core import add_indicators
 from wyckoff.indicators.limits import add_limit_flags
 from wyckoff.phases import CurrentPhase, PhaseResult, classify_phases, current_phase
 from wyckoff.phases_distribution import CurrentDistributionPhase, classify_distribution_phases, current_distribution_phase
+from wyckoff.revision import RevisionResult, build_revision
 from wyckoff.stages import MARKDOWN, MARKUP, CurrentStage, StageResult, classify_stages, current_stage
 from wyckoff.strength import TrendStrength, trend_strength
 
@@ -33,6 +34,7 @@ class AnalysisResult:
     candidates: list[Event] = field(default_factory=list)   # chưa/không xác nhận – không dùng cho pha/tin cậy
     distribution: list[Event] = field(default_factory=list) # BC, AR(d), ST(d), SOW, LPSY: chỉ ghi nhận, không dùng cho pha/tin cậy
     distribution_phases: PhaseResult | None = None          # pha theo sơ đồ phân phối, chạy song song, chỉ ghi nhận
+    revision: RevisionResult | None = None                  # đánh giá lại tiềm năng / xác nhận / bác bỏ, chỉ ghi nhận
 
     def structure_of(self) -> dict[str, int]:
         """event_id -> structure_id (cấu trúc của state machine pha)."""
@@ -112,6 +114,16 @@ class AnalysisResult:
                 segments=[g for g in self.distribution_phases.segments if g.end_date >= ts],
                 structures=self.distribution_phases.structures,
             ),
+            revision=None if self.revision is None else RevisionResult(
+                hypotheses=[h for h in self.revision.hypotheses if h.end_date >= ts],
+                events=[e for e in self.revision.events if e.date >= ts],
+                candidates=[e for e in self.revision.candidates if e.date >= ts],
+                assessments=self.revision.assessments,
+                phase_series=self.revision.phase_series.loc[ts:],
+                phase_segments=[g for g in self.revision.phase_segments if g.end_date >= ts],
+                labels=self.revision.labels,
+                range_verdicts=self.revision.range_verdicts,
+            ),
         )
 
 
@@ -128,7 +140,10 @@ def analyze(ohlcv: pd.DataFrame, cfg: Config | None = None) -> AnalysisResult:
     )
     ar = detect_ar(df, sc_events, cfg.ar)
     anchors = sc_ar_anchors(sc_events, ar) if cfg.ranges.anchor_sc_ar else None
-    ranges = detect_trading_ranges(df, swings, cfg.ranges, anchors)
+    if cfg.ranges.pivot_source not in PIVOT_SOURCES:
+        raise ValueError(f"ranges.pivot_source không hợp lệ: {cfg.ranges.pivot_source!r}, chọn một trong {PIVOT_SOURCES}")
+    range_swings = swings if cfg.ranges.pivot_source == "high_low" else find_swings(df, cfg.swings, source=cfg.ranges.pivot_source)
+    ranges = detect_trading_ranges(df, range_swings, cfg.ranges, anchors)
     springs = detect_spring(df, ranges, cfg.spring, exchange=cfg.data.exchange, decimals=dec, candidates=candidates)
     sos = detect_sos(df, ranges, cfg.sos, decimals=dec, candidates=candidates) + detect_sos_reclaim(
         df, ranges, cfg.sos, window=cfg.phase.reclaim_window, decimals=dec, candidates=candidates
@@ -149,7 +164,8 @@ def analyze(ohlcv: pd.DataFrame, cfg: Config | None = None) -> AnalysisResult:
     )
     return AnalysisResult(df=df, swings=swings, ranges=ranges, events=events, phases=phases, stages=stages, cfg=cfg,
                           candidates=candidates, distribution=distribution,
-                          distribution_phases=classify_distribution_phases(df, ranges, distribution, events, cfg.phase))
+                          distribution_phases=classify_distribution_phases(df, ranges, distribution, events, cfg.phase),
+                          revision=build_revision(df, ranges, events, candidates, phases, stages, distribution, range_swings, cfg))
 
 
 __all__ = ["AnalysisResult", "analyze", "EventType"]

@@ -84,7 +84,7 @@ def main() -> None:
     p.add_argument("symbol", nargs="?", default="HPG")
     p.add_argument("--start", default="2020-01-01")
     p.add_argument("--end", default=None)
-    p.add_argument("--config", default=None)
+    p.add_argument("--config", default=str(Path(__file__).resolve().parent / "config" / "v3.yaml"))
     p.add_argument("--cache-dir", default="cache")
     p.add_argument("--out-dir", default="output")
     p.add_argument("--refresh", action="store_true", help="bỏ qua cache, tải lại toàn bộ")

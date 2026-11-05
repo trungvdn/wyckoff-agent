@@ -20,7 +20,7 @@ from wyckoff.pipeline import AnalysisResult
 from wyckoff.stages import MARKDOWN
 from wyckoff.strength import STRONG, WEAK, TrendStrength
 
-PAYLOAD_VERSION = "8"   # v8 (04/11/2026): current_stage.distribution_phase (pha theo sơ đồ phân phối khi đang trong range)
+PAYLOAD_VERSION = "9"   # v9 (05/11/2026): revision (tiềm năng / xác nhận / bác bỏ, chỉ ghi nhận); stage_history.revision_status
 
 
 def _r(x: Any, d: int = 2) -> Any:
@@ -129,6 +129,32 @@ def _event_dict(i: int, e: Event) -> dict[str, Any]:
     }
 
 
+def _revision_block(result: AnalysisResult, range_id: int | None) -> dict[str, Any]:
+    """Đánh giá lại tại phiên cuối: chỉ ghi nhận, không vào điểm tin cậy."""
+    rv = result.revision
+    last_date = result.df.index[-1]
+    row = rv.phase_series.iloc[-1]
+    seg = rv.phase_segments[-1] if rv.phase_segments else None
+    hyp = rv.hypothesis_on(last_date)
+    own = [e for e in rv.events if range_id is not None and e.range_id == range_id]
+    # SOS trùng phiên range thoát lên không được nhật ký gắn vào cấu trúc, nhưng vẫn là căn cứ của nhãn Accumulation
+    own += [e for e in result.events if e.kind == EventType.SOS and range_id is not None and e.range_id == range_id]
+    # SC xác nhận ngay trước range hiện tại là sự kiện mở cấu trúc, dù chưa gắn với range nào
+    rng = next((r for r in result.ranges if r.range_id == range_id), None)
+    if rng is not None:
+        own += [e for e in rv.events if e.kind == EventType.SC and rv.status_of(e) == "confirmed"
+                and rng.start_date - pd.Timedelta(days=45) <= e.date <= rng.confirmed_date]
+    return {
+        "trend": None if hyp is None else hyp.to_dict(),
+        "range_structure": (lambda v: None if v is None else v.structure_type)(rv.accumulation_of(range_id)),
+        "accumulation": (lambda v: None if v is None else v.to_dict())(rv.range_verdicts.get(range_id)),
+        "phase": {"phase": None if pd.isna(row["phase"]) else row["phase"], "reason": row["reason"],
+                  "since": _date(seg.start_date) if seg is not None else None},
+        "events": [{**_event_dict(i, e), "assessment": rv.status_of(e)} for i, e in enumerate(own)],
+        "changes": rv.changes(),
+    }
+
+
 def _recent(df: pd.DataFrame, sup: float | None, res: float | None, atr: float) -> dict[str, Any]:
     last = df.iloc[-1]
     win = df.iloc[-20:]
@@ -208,15 +234,18 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
         },
         "stage_history": [
             {"range_id": r.range_id, "prior_stage": r.prior_stage, "stage": r.stage, "structure_type": r.structure_type,
-             "exit": r.exit_direction, "resolved_date": _date(r.resolved_date)}
+             "exit": r.exit_direction, "resolved_date": _date(r.resolved_date),
+             "revision_status": (lambda h: None if h is None else h.status)(result.revision.hypothesis_of_range(r.range_id)),
+             "revised_type": (lambda v: None if v is None else v.label)(result.revision.range_verdicts.get(r.range_id))}
             for r in resolved
         ],
+        "revision": _revision_block(result, cur.range_id),
         "levels": levels,
         "confidence": confidence(cur, struct_events, cur.range_context,
                                  market_confidence_factors(market, cfg.market) if market else None, cfg.confidence,
                                  strength=strength, prior_stage=prior_stage),
         "market": market,
-        "evidence_events": [_event_dict(i, e) for i, e in enumerate(struct_events)],
+        "evidence_events": [{**_event_dict(i, e), "assessment": result.revision.status_of(e)} for i, e in enumerate(struct_events)],
         "recent_bars": _recent(df, cur.support, cur.resistance, cur.atr),
         "phase_history": [
             {"phase": g.phase, "start": _date(g.start_date), "end": _date(g.end_date), "range_id": g.range_id, "reason": g.reason}

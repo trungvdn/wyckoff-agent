@@ -48,6 +48,13 @@ change_20d_pct, distance_to_support_atr, level_id, ev_0...). Viết bằng từ 
    - summary phải nêu nguyên văn giá trị structure_type của payload.current_stage.
    - structure_type "Transition / Uncertain": nói rõ chưa phân định; nếu có candidates thì nêu đó là các giả thuyết, KHÔNG chọn giả thuyết nào.
    - Nhãn trong stage_history mô tả điều đã xảy ra sau khi range thoát, KHÔNG phải dự báo.
+   - payload.revision cho biết nhãn đã chắc đến đâu theo dữ liệu về sau. revision.trend.status potential: gọi là "tiềm năng", \
+KHÔNG nói đã chắc chắn; rejected: nói rõ nhãn đó đã bị bác bỏ và lý do; confirmed: chỉ là mô tả điều đã xảy ra, KHÔNG phải tín hiệu. \
+Với Markdown, revision.trend.conditions là 5 điều kiện xác nhận; nêu điều kiện còn thiếu khi còn tiềm năng. revision.trend.supporting (SOW, LPSY) chỉ là sự kiện hỗ trợ; \
+UT, UTAD thuộc Distribution, KHÔNG dùng làm lý do xác nhận Markdown. \
+Sự kiện trong revision.events và trường assessment chỉ ghi nhận, không có điểm tin cậy. \
+SC có assessment potential chỉ là ứng viên, KHÔNG gọi là SC đã xác nhận; rejected: nói rõ không còn được xem là SC. \
+revision.accumulation (hoặc revised_type trong stage_history) là mức Accumulation của range: potential là ứng viên, developing là đang hình thành, confirmed là đã xác nhận; nhãn này thay cho nhãn theo hướng thoát, chỉ mô tả, không phải dự báo. Sự kiện trong supporting chỉ là bằng chứng, KHÔNG nói là điều kiện bắt buộc.
    - Markup / Markdown có current_stage.strength: diễn giải sức mạnh cung cầu theo headline và các tín hiệu trong đó, KHÔNG đổi mức. \
 Đây là mô tả hiện trạng theo quy tắc, chưa kiểm định bằng backtest, không phải dự báo.
    - current_phase và điểm tin cậy theo sơ đồ tích lũy. Đang trong range thì current_stage.distribution_phase là pha theo sơ đồ phân phối, \

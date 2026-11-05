@@ -19,7 +19,7 @@ export function Dashboard({ data }: { data: Analysis }) {
         <PriceChart data={data} />
         <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
           <StagePhaseCard stage={data.stage} phase={data.phase} confidence={data.confidence} />
-          <EventsCard events={data.events} />
+          <EventsCard events={data.events} changes={data.revision_changes} />
         </div>
       </main>
       <div className="grid grid-cols-1 gap-4 sm:gap-5 wide:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">

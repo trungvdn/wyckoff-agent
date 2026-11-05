@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ["WYCKOFF_CONFIG"] = ""   # test web chạy trên Config(), dữ liệu giả lập được dựng theo high/low
 
 from wyckoff.indicators.core import add_indicators  # noqa: E402
 from wyckoff.synthetic import make_wyckoff_accumulation  # noqa: E402

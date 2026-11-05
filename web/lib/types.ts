@@ -20,6 +20,16 @@ export interface ChartEvent {
   price: number;
   above: boolean;
   current: boolean; // thuộc cấu trúc hiện tại
+  status: RevisionStatus;
+}
+
+export type RevisionStatus = "potential" | "confirmed" | "rejected";
+
+export interface RevisionChange {
+  date: string;
+  subject: string;
+  status: RevisionStatus | "developing";
+  reason: string;
 }
 
 export interface RangeBox {
@@ -34,13 +44,13 @@ export interface RangeBox {
 }
 
 export interface PhaseSegment {
-  phase: string; // A-E hoặc "invalid"
+  phase: string; // A-E, "invalid", hoặc "potential" (thoát xuống, chờ xác nhận)
   i0: number;
   i1: number;
 }
 
 export interface StageSegment {
-  kind: "up" | "down" | "range" | "none";
+  kind: "up" | "down" | "up_potential" | "down_potential" | "range" | "accumulation" | "accumulation_developing" | "none";
   label: string;
   i0: number;
   i1: number;
@@ -81,6 +91,18 @@ export interface TrendStrength {
 export interface StageInfo {
   view: "range" | "trend" | "transition"; // trong range: có pha; xu hướng: có sức mạnh cung cầu
   stage: string | null; // Markup | Markdown; null khi trong range hoặc chưa có xu hướng
+  revision_status: RevisionStatus | null; // mức chắc chắn của xu hướng hiện tại theo dữ liệu về sau
+  markdown_conditions: { key: string; label: string; met: boolean; detail: string }[]; // 5 điều kiện xác nhận Markdown
+  markdown_supporting: string[]; // SOW, LPSY trong đoạn, chỉ là sự kiện hỗ trợ
+  accumulation: {
+    level: "potential" | "developing" | "confirmed" | "rejected";
+    structure_type: string;
+    label: string | null;
+    since: string;
+    reason: string;
+    conditions: { key: string; label: string; met: boolean; detail: string }[];
+    supporting: string[]; // sự kiện làm bằng chứng, không bắt buộc
+  } | null; // mức Accumulation của range hiện tại
   structure_type: string;
   strength: TrendStrength | null;
   note: string | null; // lưu ý từ kết quả kiểm định khi có pha C trong range
@@ -124,6 +146,7 @@ export interface WyckoffEvent {
   vol_ratio: number | null;
   spread_atr: number | null;
   close_pos: number | null;
+  status: RevisionStatus;
 }
 
 export interface Level {
@@ -164,6 +187,7 @@ export interface Analysis {
   ranges: RangeBox[];
   phase_segments: PhaseSegment[];
   stage_segments: StageSegment[];
+  revision_changes: RevisionChange[];
   stage: StageInfo;
   phase: PhaseInfo;
   confidence: Confidence;

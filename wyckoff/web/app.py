@@ -38,7 +38,9 @@ def _env_flag(name: str) -> bool:
 
 @dataclass
 class Settings:
-    config_path: str | None = field(default_factory=lambda: os.environ.get("WYCKOFF_CONFIG") or None)
+    # Mặc định config/v3.yaml; WYCKOFF_CONFIG rỗng: dùng Config() (như backtest)
+    config_path: str | None = field(default_factory=lambda: os.environ.get(
+        "WYCKOFF_CONFIG", str(Path(__file__).resolve().parents[2] / "config" / "v3.yaml")) or None)
     cache_dir: str = field(default_factory=lambda: os.environ.get("WYCKOFF_CACHE_DIR", "cache"))
     out_dir: str = field(default_factory=lambda: os.environ.get("WYCKOFF_OUT_DIR", "output"))
     model: str = field(default_factory=lambda: os.environ.get("WYCKOFF_MODEL", DEFAULT_MODEL))
