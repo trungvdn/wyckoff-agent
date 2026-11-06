@@ -35,7 +35,8 @@ Viết "pha C", không viết "phase C". Số thập phân dùng dấu phẩy (2
 trái với các quy tắc trên.
 9. `event_ids`: id các sự kiện trong payload.evidence_events mà câu trả lời dựa vào (có thể rỗng).
 10. Giai đoạn do code tính (payload.current_stage, payload.stage_history); không tự gán nhãn. "Transition / Uncertain" nghĩa là \
-chưa phân định: candidates chỉ là giả thuyết. Nhãn đã chốt mô tả điều đã xảy ra, không phải dự báo."""
+chưa phân định: candidates chỉ là giả thuyết. Nhãn đã chốt mô tả điều đã xảy ra, không phải dự báo. \
+Có revision.structure thì giai đoạn là revision.structure.title và pha là revision.phase; current_stage, current_phase khi đó chỉ là nhật ký theo hướng thoát."""
 
 ASK_SCHEMA: dict[str, Any] = {
     "type": "object",

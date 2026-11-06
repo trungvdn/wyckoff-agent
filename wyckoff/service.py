@@ -60,6 +60,8 @@ def load_ohlcv(symbol: str, tf: str, cfg: Config, *, start: str | None = None, e
         except Exception as exc:  # noqa: BLE001 - lỗi nguồn dữ liệu (mạng, hạn mức, mã sai)
             # Chi tiết (từng nguồn / cách gọi vnstock) chỉ ghi log; người dùng nhận thông báo ngắn
             logger.warning("Không tải được dữ liệu %s: %s", symbol, exc)
+            if cfg.data.offline:
+                raise DataUnavailable(f"Mã {symbol} chưa có trong dữ liệu đã đồng bộ lên máy chủ.", status=404) from exc
             if "không có mã" in str(exc).lower():
                 raise DataUnavailable(f"Không tìm thấy mã {symbol} trên các nguồn dữ liệu. Kiểm tra lại mã cổ phiếu.",
                                       status=404) from exc

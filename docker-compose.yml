@@ -1,0 +1,62 @@
+# Triển khai riêng tư trên một VPS. Hướng dẫn: docs/deploy.md.
+# Không service nào mở cổng ra ngoài; truy cập đi qua Cloudflare Tunnel (profile "tunnel").
+name: wyckoff
+
+x-common: &common
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  api:
+    <<: *common
+    build: .
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      WYCKOFF_NO_LLM: ${WYCKOFF_NO_LLM:-}
+    volumes:
+      # Dữ liệu do scripts/sync_cache.py đẩy lên; container chỉ đọc
+      - ${WYCKOFF_CACHE_HOST_DIR:-./data/cache}:/data/cache:ro
+      - llm_output:/data/output
+    mem_limit: 768m
+    networks: [backend]
+
+  web:
+    <<: *common
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_DEFAULT_SYMBOL: ${NEXT_PUBLIC_DEFAULT_SYMBOL:-HPG}
+    environment:
+      WYCKOFF_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 512m
+    networks: [backend, edge]
+
+  # Chỉ nằm chung mạng với web, nên tunnel không thể trỏ thẳng tới API
+  cloudflared:
+    <<: *common
+    image: cloudflare/cloudflared:2026.10.7
+    profiles: [tunnel]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      web:
+        condition: service_healthy
+    mem_limit: 256m
+    networks: [edge]
+
+volumes:
+  llm_output:
+
+networks:
+  backend:
+  edge:

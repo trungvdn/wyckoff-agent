@@ -17,6 +17,7 @@ from wyckoff.detectors.models import CTX_AFTER_DECLINE, CTX_AFTER_RISE, SPRING_T
 from wyckoff.fmt import vn_g, vn_num, vn_ts
 from wyckoff.phases import CurrentPhase
 from wyckoff.pipeline import AnalysisResult
+from wyckoff.revision import structure_title
 from wyckoff.stages import MARKDOWN
 from wyckoff.strength import STRONG, WEAK, TrendStrength
 
@@ -130,6 +131,16 @@ def _event_dict(i: int, e: Event) -> dict[str, Any]:
     }
 
 
+def stage_conclusion(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Kết luận đang hiện trên thẻ giai đoạn khi có cấu trúc còn hiệu lực: tên cấu trúc, mức bằng chứng và pha theo lớp đánh giá lại.
+    Diễn giải dùng kết luận này thay cho nhật ký, để không trái với thẻ. None: không có cấu trúc, dùng nhật ký như cũ."""
+    rv = payload.get("revision") or {}
+    st = rv.get("structure")
+    if not st:
+        return None
+    return {**st, "phase": (rv.get("phase") or {}).get("phase"), "phase_reason": (rv.get("phase") or {}).get("reason"), "phase_since": (rv.get("phase") or {}).get("since")}
+
+
 def _revision_block(result: AnalysisResult, range_id: int | None) -> dict[str, Any]:
     """Đánh giá lại tại phiên cuối: chỉ ghi nhận, không vào điểm tin cậy."""
     rv = result.revision
@@ -153,6 +164,7 @@ def _revision_block(result: AnalysisResult, range_id: int | None) -> dict[str, A
     return {
         "trend": None if hyp is None else hyp.to_dict(),
         "structure": None if live is None else {"range_id": live.range_id, "level": live.status, "structure_type": live.structure_type,
+                                                "title": structure_title(live.structure_type, live.status), "reason": live.history[-1].reason,
                                                 "watch_end": _date(live.watch_end), "evidence": live.evidence(result.cfg.revision)},
         "range_structure": (lambda v: None if v is None else v.structure_type)(rv.accumulation_of(range_id)),
         "accumulation": (lambda v: None if v is None else v.to_dict())(rv.range_verdicts.get(range_id)),

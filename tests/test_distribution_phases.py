@@ -244,7 +244,7 @@ def test_view_targets_follow_stage() -> None:
     assert {"BC", "AR(d)", "SOW"} <= {e["kind"] for e in v["chart_events"]}
     assert all(v["bars"][e["i"]]["t"] == e["t"] for e in v["chart_events"]) and v["stage"]["note"] is None
     kinds = [s["kind"] for s in v["stage_segments"]][-2:]
-    assert kinds[0] == "range" and kinds[1] in ("down", "down_potential")
+    assert kinds[0] in ("range", "distribution_potential") and kinds[1] in ("down", "down_potential")
 
 
 def test_view_in_range_shows_note_and_down_target() -> None:

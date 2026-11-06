@@ -56,4 +56,6 @@ def add_indicators(df: pd.DataFrame, cfg: IndicatorConfig | None = None) -> pd.D
     out["tr_atr"] = out["tr"] / out["atr_ref"]          # biên độ thật (tính cả gap) / ATR
     out["change"] = out["close"].pct_change()
     out["sma"] = out["close"].rolling(cfg.sma_period, min_periods=cfg.sma_period).mean()
+    out["ema_fast"] = out["close"].ewm(span=cfg.ema_fast, adjust=False, min_periods=cfg.ema_fast).mean()
+    out["ema_slow"] = out["close"].ewm(span=cfg.ema_slow, adjust=False, min_periods=cfg.ema_slow).mean()
     return out

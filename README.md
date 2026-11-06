@@ -204,6 +204,7 @@ Dashboard và `run.py` mặc định dùng `config/v3.yaml` (biên range theo cl
 
 ## Dữ liệu
 - `vnstock` 5.x (tương thích 3.x). Nguồn chính VCI, dự phòng KBS (giá nghìn đồng, đã điều chỉnh).
+- **Lưu ý cài đặt:** từ 24/09/2026 PyPI để `vnstock` ở trạng thái `quarantined` nên `pip install -r requirements.txt` trên máy mới sẽ lỗi. Server không cần gói này (`docs/deploy.md`).
 - Chuỗi dự phòng, dừng ở cách đầu tiên phủ đủ từ `start` (dung sai 15 ngày):
   `Quote.history(start, end)` → `Market().equity().ohlcv(start, end, limit=N)` → `Quote.history` chia đoạn 365 ngày, lặp lại với nguồn dự phòng.
   Không cách nào phủ đủ → dùng kết quả phủ xa nhất và cảnh báo **THIẾU LỊCH SỬ**.

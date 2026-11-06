@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { Card, CardHeader, Eyebrow, cx } from "@/components/ui/Card";
 import { fmtDate, fmtDateShort, fmtRatio } from "@/lib/format";
 import type { RevisionChange, WyckoffEvent } from "@/lib/types";
@@ -10,7 +13,10 @@ function StatusTag({ status }: { status: RevisionChange["status"] }) {
 }
 
 /** Sự kiện của cấu trúc hiện tại, mỗi dòng kèm trạng thái và bằng chứng định lượng; kèm các lần đánh giá lại gần nhất. */
-export function EventsCard({ events, changes }: { events: WyckoffEvent[]; changes: RevisionChange[] }) {
+export function EventsCard({ events: all, changes }: { events: WyckoffEvent[]; changes: RevisionChange[] }) {
+  const [showRejected, setShowRejected] = useState(false);
+  const hidden = all.filter((e) => e.status === "rejected").length;
+  const events = showRejected ? all : all.filter((e) => e.status !== "rejected");
   return (
     <Card labelledBy="events-h" className="flex-1">
       <CardHeader>
@@ -37,6 +43,11 @@ export function EventsCard({ events, changes }: { events: WyckoffEvent[]; change
           </li>
         ))}
       </ol>
+      {hidden > 0 && (
+        <button type="button" aria-pressed={showRejected} onClick={() => setShowRejected((v) => !v)} className="min-h-8 cursor-pointer self-start text-[13px] text-muted hover:text-fg">
+          {showRejected ? `Ẩn ${hidden} sự kiện bị bác bỏ` : `Hiện ${hidden} sự kiện bị bác bỏ`}
+        </button>
+      )}
       {changes.length > 0 && (
         <details className="border-t border-line pt-3">
           <summary className="flex min-h-8 cursor-pointer items-center text-[13px] text-muted hover:text-fg">Đánh giá lại gần đây</summary>

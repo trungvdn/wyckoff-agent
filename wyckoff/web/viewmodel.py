@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from typing import Any
 
 import pandas as pd
@@ -11,7 +12,7 @@ from wyckoff.phases import Structure
 from wyckoff.phases_distribution import DistStructure
 from wyckoff.pipeline import AnalysisResult
 from wyckoff.pnf import cause_effect_target, cause_effect_target_down
-from wyckoff.revision import CONFIRMED, DEVELOPING, PHASE_POTENTIAL, POTENTIAL, REJECTED
+from wyckoff.revision import CONFIRMED, DEVELOPING, PHASE_POTENTIAL, POTENTIAL, REJECTED, structure_title
 
 # API trả toàn bộ lịch sử đã phân tích; đây chỉ là khung nhìn mặc định khi mở biểu đồ
 VIEW_BARS = {"1D": 160, "1W": 156}
@@ -102,6 +103,8 @@ def stage_segments(result: AnalysisResult) -> list[dict[str, Any]]:
     labels = {r.range_id: r for r in result.stages.ranges}
     hyp_by_start = {h.start_idx: h for h in result.revision.hypotheses}
     out = []
+    range_label: dict[int, str] = {}
+    range_seg_end: dict[int, int] = {}   # đoạn của range trong nhật ký kéo đến trước phiên xác nhận thoát
     for g in result.stages.segments:
         if g.range_id is not None:
             r = labels.get(g.range_id)
@@ -116,6 +119,8 @@ def stage_segments(result: AnalysisResult) -> list[dict[str, Any]]:
             kind, label = "range", f"{short}?" if status == POTENTIAL and short != "TR ?" else short
             if verdict is not None and verdict.status == POTENTIAL:
                 label = "Dist?" if verdict.is_distribution else "Re-acc?" if verdict.is_reaccumulation else "Acc?"
+            range_label[g.range_id] = label
+            range_seg_end[g.range_id] = g.end_idx
         elif g.stage in TREND_STAGES:
             h = hyp_by_start.get(g.start_idx)
             status = h.status if h is not None else CONFIRMED
@@ -129,20 +134,35 @@ def stage_segments(result: AnalysisResult) -> list[dict[str, Any]]:
         else:
             kind, label = "none", ""
         out.append({"kind": kind, "label": label, "i0": g.start_idx, "i1": g.end_idx})
-    # Range đã xác nhận hoặc đang hình thành Accumulation: một đoạn liền từ đầu range đến trước Markup, đè lên các đoạn cũ
-    # Giá đã rời range nhưng cấu trúc còn hiệu lực: đoạn kéo đến phiên cuối
-    live = result.live_structure() if result.current_stage().range_id is None else None
+    # Biểu đồ hồi cứu: đoạn của range khớp với khung range, từ đầu range, không chỉ từ phiên xác nhận range.
+    # Giá đã rời range nhưng range vẫn là cấu trúc hiện tại: đoạn kéo đến phiên cuối, như khung range.
+    reopened = result.reopened_range_id()
+    last = len(result.df) - 1
+    for r in result.ranges:
+        end = last if r.range_id == reopened else max(r.end_idx, range_seg_end.get(r.range_id, r.end_idx))
+        out = _overlay_segment(out, {"kind": "range", "label": range_label.get(r.range_id, "TR ?"), "i0": r.start_idx, "i1": end})
+    # Cấu trúc đại diện đã phân định: một đoạn liền từ đầu range đến trước Markup, đè lên các đoạn cũ
     for rid in sorted(set(result.revision.range_verdicts) | set(result.revision.distribution_verdicts)):
-        v = result.revision.primary_of(rid)[0]
+        v, decided = result.revision.primary_of(rid)
         if v is None:
             continue
         name = "distribution" if v.is_distribution else "reaccumulation" if v.is_reaccumulation else "accumulation"
-        end = len(result.df) - 1 if live is not None and live.range_id == rid else v.end_idx
+        short = v.structure_type.replace("Initial ", "")
+        end = last if rid == reopened else v.end_idx if v.status == CONFIRMED else max(v.end_idx, range_seg_end.get(rid, v.end_idx))
         if v.status == CONFIRMED:
             out = _overlay_segment(out, {"kind": name, "label": v.structure_type, "i0": v.start_idx, "i1": end})
         elif v.status == DEVELOPING:
-            out = _overlay_segment(out, {"kind": f"{name}_developing", "label": f"{v.structure_type.replace('Initial ', '')}?", "i0": v.start_idx, "i1": end})
-    return out
+            out = _overlay_segment(out, {"kind": f"{name}_developing", "label": f"{short}?", "i0": v.start_idx, "i1": end})
+        elif v.status == POTENTIAL and decided:
+            out = _overlay_segment(out, {"kind": f"{name}_potential", "label": f"{short}?", "i0": v.start_idx, "i1": end})
+    # Các đoạn liền nhau cùng nhãn gộp làm một
+    merged: list[dict[str, Any]] = []
+    for s in out:
+        if merged and merged[-1]["kind"] == s["kind"] and merged[-1]["label"] == s["label"]:
+            merged[-1] = {**merged[-1], "i1": s["i1"]}
+        else:
+            merged.append(s)
+    return merged
 
 
 def _overlay_segment(segments: list[dict[str, Any]], new: dict[str, Any]) -> list[dict[str, Any]]:
@@ -176,7 +196,7 @@ def stage_view(current: dict[str, Any], history: list[dict[str, Any]], trend: di
     title = {"range": " hoặc ".join(current["candidates"]), "trend": trend_title, "transition": "Chưa có xu hướng rõ"}[view]
     if structure is not None and view != "trend":
         view = "range"
-        title = f"{structure['structure_type'].replace('Initial ', '')} đang hình thành" if structure["level"] == DEVELOPING else structure["structure_type"]
+        title = structure_title(structure["structure_type"], structure["level"])
     dist = current.get("distribution_phase")
     dist_view = None if not dist else {**phase_view(dist["phase"]), "since": dist["since"], "reason": dist["reason"],
                                        "events": [e["kind"] for e in dist["events"]]}
@@ -194,6 +214,13 @@ def stage_view(current: dict[str, Any], history: list[dict[str, Any]], trend: di
         out["strength"] = None
         out["structure_type"] = f"{current['stage']} đã bác bỏ"
     return out
+
+
+def _ema_crosses(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Các phiên EMA ngắn cắt EMA dài. Chỉ để vẽ, không phải tín hiệu."""
+    above = (df["ema_fast"] > df["ema_slow"]).where(df["ema_slow"].notna()).to_numpy(dtype=object)
+    return [{"i": i, "up": bool(above[i])} for i in range(1, len(above))
+            if not pd.isna(above[i]) and not pd.isna(above[i - 1]) and above[i] != above[i - 1]]
 
 
 def _chart_event(e: Any, above_set: set[str], current: bool, status: str) -> dict[str, Any]:
@@ -219,7 +246,8 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
     s = current_structure(result)
     bars = [
         {"t": _date(ts), "o": _f(r.open), "h": _f(r.high), "l": _f(r.low), "c": _f(r.close),
-         "v": int(r.volume), "vr": _f(r.vol_ratio), "vma": None if pd.isna(r.vol_ma) else int(r.vol_ma)}
+         "v": int(r.volume), "vr": _f(r.vol_ratio), "vma": None if pd.isna(r.vol_ma) else int(r.vol_ma),
+         "ema_fast": None if pd.isna(r.ema_fast) else round(float(r.ema_fast), 4), "ema_slow": None if pd.isna(r.ema_slow) else round(float(r.ema_slow), 4)}
         for ts, r in df.iterrows()
     ]
     rv = result.revision
@@ -268,8 +296,13 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
     ]
     events.sort(key=lambda e: e["date"])
     exchange = result.cfg.data.exchange
-    target = cause_effect_target(df, s, result.cfg.pnf, exchange) if s is not None and stage_name != "Markdown" else None
-    target_down = cause_effect_target_down(df, d, result.cfg.pnf, exchange) if d is not None and stage_name != "Markup" else None
+    # Có cấu trúc còn hiệu lực: mục tiêu theo cấu trúc đó và pha của lớp đánh giá lại, không theo xu hướng trong nhật ký
+    live = revision["structure"]
+    up_side = live["structure_type"] != "Distribution" if live else stage_name != "Markdown"
+    down_side = live["structure_type"] == "Distribution" if live else stage_name != "Markup"
+    s_target = replace(s, phase=revision["phase"]["phase"]) if live and s is not None else s
+    target = cause_effect_target(df, s_target, result.cfg.pnf, exchange) if s_target is not None and up_side else None
+    target_down = cause_effect_target_down(df, d, result.cfg.pnf, exchange) if d is not None and down_side else None
     close = float(df["close"].iloc[-1])
     if target is not None:
         target = {**target, "reached": close >= target["conservative"]}
@@ -293,6 +326,8 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
         "notices": list(notices or []),
         "warnings": payload["warnings"],
         "bars": bars,
+        "ema_periods": [result.cfg.indicators.ema_fast, result.cfg.indicators.ema_slow],
+        "ema_crosses": _ema_crosses(df),
         "view_from": default_view_start(result, tf, s),
         "chart_events": chart_events,
         "ranges": ranges,

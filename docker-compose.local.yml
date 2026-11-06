@@ -1,0 +1,11 @@
+# Chạy thử trên máy phát triển, không cần tunnel và không mở cổng ra mạng ngoài:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+services:
+  api:
+    environment:
+      WYCKOFF_NO_LLM: "1"
+    volumes:
+      - ${WYCKOFF_CACHE_HOST_DIR:-./cache}:/data/cache:ro
+  web:
+    ports:
+      - "127.0.0.1:3000:3000"

@@ -81,12 +81,17 @@ def get_ohlcv(
     - `check_limits=False` cho chỉ số (không có biên độ trần/sàn).
     """
     cfg = cfg or DataConfig()
-    source_fn = source_fn or vnstock_source(
-        cfg.source, cfg.fallback_sources, cfg.chunk_days, cfg.coverage_tolerance_days
-    )
     symbol = symbol.upper()
     end = end or _fmt(date.today())
     path = cache_path(cache_dir, symbol)
+    if cfg.offline:  # Server không có nguồn dữ liệu: chỉ đọc CSV đã đồng bộ, không tải, không ghi
+        synced = load_cache(path)
+        if synced is None or synced.empty:
+            raise ValueError(f"Không có mã {symbol} trong dữ liệu đã đồng bộ")
+        return synced.loc[pd.Timestamp(start):pd.Timestamp(end)]
+    source_fn = source_fn or vnstock_source(
+        cfg.source, cfg.fallback_sources, cfg.chunk_days, cfg.coverage_tolerance_days
+    )
     cached = None if refresh else load_cache(path)
 
     def full_fetch() -> pd.DataFrame:

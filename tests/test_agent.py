@@ -11,7 +11,7 @@ import pytest
 
 from wyckoff.agent.explain import explain
 from wyckoff.agent.llm import AnthropicClient, FakeClient, LLMError
-from wyckoff.agent.payload import build_payload, payload_json
+from wyckoff.agent.payload import build_payload, payload_json, stage_conclusion
 from wyckoff.agent.prompts import OUTPUT_SCHEMA
 from wyckoff.agent.report import render_html, template_explanation, vn, vn_date
 from wyckoff.agent.validate import allowed_values, ungrounded, validate_explanation
@@ -25,12 +25,19 @@ def payload_c(ohlcv: pd.DataFrame) -> dict:
     return build_payload(analyze(ohlcv.iloc[:SPRING_CONFIRM_IDX + 5]), "DEMO")
 
 
+def _expected_stage(p: dict) -> tuple[str, str]:
+    """Giai đoạn và pha mà diễn giải phải nêu: theo thẻ giai đoạn khi có cấu trúc còn hiệu lực."""
+    c = stage_conclusion(p)
+    return (c["title"], c["phase"]) if c else (p["current_stage"]["structure_type"], p["current_phase"]["phase"])
+
+
 def good_explanation(p: dict) -> dict:
     """Diễn giải mẫu 'kiểu LLM' chỉ dùng số trong payload (fixture viết tay cho test)."""
     ev = p["evidence_events"]
     spring = next(e for e in ev if e["kind"] == "Spring")
+    label, phase = _expected_stage(p)
     return {
-        "summary": f"{p['current_stage']['structure_type']}: DEMO đang ở pha C sau Spring ngày {vn_date(spring['date'])} "
+        "summary": f"{label}: DEMO đang ở pha {phase} sau Spring ngày {vn_date(spring['date'])} "
                    f"với volume {vn(spring['vol_ratio'])}x TB20.",
         "phase_assessment": f"Spring thủng support {vn(p['current_phase']['support'])} rồi đóng cửa quay lại; "
                             f"close_pos phiên thủng {vn(spring['close_pos'])}.",
@@ -142,10 +149,11 @@ def test_unknown_event_rejected(payload_c: dict) -> None:
 
 def test_wrong_phase_and_confidence_rejected(payload_c: dict) -> None:
     e = good_explanation(payload_c)
-    e["summary"] = e["summary"].replace("pha C", "pha D")
+    phase = _expected_stage(payload_c)[1]
+    e["summary"] = e["summary"].replace(f"pha {phase}", "pha D")
     e["confidence_explanation"] = "Mức tin cậy thấp."
     errs = validate_explanation(e, payload_c)
-    assert any("pha C" in x for x in errs) and any("mức tin cậy" in x for x in errs)
+    assert any(f"pha {phase}" in x for x in errs) and any("mức tin cậy" in x for x in errs)
 
 
 def test_schema_errors(payload_c: dict) -> None:
@@ -251,7 +259,7 @@ def test_render_html_escapes_and_shows_levels(payload_c: dict) -> None:
     page = render_html(payload_c, e, source="llm", model="m")
     assert "<script>alert(1)</script>" not in page and "&lt;script&gt;" in page
     price = vn(payload_c["levels"][0]["price"])
-    assert price in page and "không phải lời khuyên đầu tư" in page and "Pha C" in page
+    assert price in page and "không phải lời khuyên đầu tư" in page and f"Pha {_expected_stage(payload_c)[1]}" in page
 
 
 def test_render_html_template_notes(payload_c: dict) -> None:
@@ -287,9 +295,10 @@ def test_style_errors_block_explanation(payload_c: dict) -> None:
 
 def test_summary_must_say_pha_not_phase(payload_c: dict) -> None:
     e = good_explanation(payload_c)
-    e["summary"] = e["summary"].replace("pha C", "phase C")
+    phase = _expected_stage(payload_c)[1]
+    e["summary"] = e["summary"].replace(f"pha {phase}", f"phase {phase}")
     errs = validate_explanation(e, payload_c)
-    assert any("'pha C'" in x for x in errs) and any("'phase'" in x for x in errs)
+    assert any(f"'pha {phase}'" in x for x in errs) and any("'phase'" in x for x in errs)
 
 
 def test_long_scenario_rejected(payload_c: dict) -> None:

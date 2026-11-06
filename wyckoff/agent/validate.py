@@ -5,6 +5,7 @@ import re
 from datetime import date
 from typing import Any, Iterable
 
+from wyckoff.agent.payload import stage_conclusion
 from wyckoff.agent.prompts import OUTPUT_SCHEMA, TEXT_FIELDS
 
 _ISO_DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
@@ -183,10 +184,11 @@ def validate_explanation(expl: Any, payload: dict[str, Any]) -> list[str]:
         if n["event_id"] not in event_ids:
             errs.append(f"evidence_notes: event_id '{n['event_id']}' không có trong payload.evidence_events")
 
-    phase = payload.get("current_phase", {}).get("phase")
-    if phase and phase != "invalid" and not re.search(rf"\bpha\s+{re.escape(phase)}\b", expl["summary"], re.I):
+    conclusion = stage_conclusion(payload)
+    phase = conclusion["phase"] if conclusion else payload.get("current_phase", {}).get("phase")
+    if phase and phase not in ("invalid", "potential") and not re.search(rf"\bpha\s+{re.escape(phase)}\b", expl["summary"], re.I):
         errs.append(f"summary phải nêu đúng pha hiện tại 'pha {phase}'")
-    structure_type = payload.get("current_stage", {}).get("structure_type")
+    structure_type = conclusion["title"] if conclusion else payload.get("current_stage", {}).get("structure_type")
     if structure_type and structure_type not in expl["summary"]:
         errs.append(f"summary phải nêu đúng loại cấu trúc do code tính: '{structure_type}'")
     level = payload.get("confidence", {}).get("level")

@@ -142,7 +142,7 @@ Ngưỡng trong `RevisionConfig`, mã nguồn `_range_verdicts` trong `wyckoff/r
 
 **Nhãn:** Initial Accumulation khi trước range là Markdown theo nhật ký, Accumulation khi bối cảnh giảm đến từ SMA50 hoặc SC. Range sau Markup đã rõ được xét là Re-accumulation (mục riêng bên dưới).
 
-**Trên biểu đồ hồi cứu:** Confirmed và Developing phủ một đoạn liền từ đầu range đến trước Markup. Range không đạt hoặc bị bác bỏ hiện `TR ?`. Thẻ giai đoạn liệt kê từng bằng chứng "Đạt" hoặc "Chưa", kèm sự kiện làm bằng chứng.
+**Trên biểu đồ hồi cứu:** dải giai đoạn bám theo khung range, từ đầu range chứ không chỉ từ phiên xác nhận range. Candidate, Developing và Confirmed đã phân định phủ một đoạn liền từ đầu range đến trước Markup (`Accumulation?` khi chưa xác nhận, `Initial Accumulation` khi Confirmed). Range không đạt hoặc bị bác bỏ hiện `TR ?`. Xu hướng bị bác bỏ không tô, kể cả khi giá đang giảm, vì dải chỉ hiện giả thuyết của hệ thống. Thẻ giai đoạn liệt kê từng bằng chứng "Đạt" hoặc "Chưa", kèm sự kiện làm bằng chứng.
 
 **Spring trong Accumulation:** định nghĩa đầy đủ ở `docs/event-definitions.md`. Spring được xét cả khi range đã thoát xuống mà Markdown đang bị bác bỏ. Có SC mới thì giá đã sang cấu trúc mới. Biểu đồ hồi cứu vẽ từ phiên Spring sớm nhất liên quan đến cú thoát đến trước SOS là pha C.
 
@@ -166,7 +166,9 @@ Nhật ký tại từng thời điểm (`result.phases`), điểm tin cậy và 
 
 ### Hiển thị cấu trúc và mức bằng chứng
 
-Thẻ giai đoạn gọi tên theo cấu trúc đại diện của range khi cấu trúc đó đã phân định và ở mức Developing hoặc Confirmed: `Accumulation đang hình thành`, `Re-accumulation đang hình thành`, `Distribution đang hình thành`, hoặc tên đầy đủ khi Confirmed. Candidate vẫn hiện các giả thuyết như cũ.
+Thẻ giai đoạn, phần diễn giải của Agent, báo cáo và mục tiêu giá dùng chung một kết luận (`revision.structure`, `stage_conclusion`), nên không trái nhau. Khi có cấu trúc còn hiệu lực, giai đoạn và pha lấy từ lớp đánh giá lại; `current_stage`, `current_phase` chỉ còn là nhật ký theo hướng thoát. Mục tiêu giá theo phía của cấu trúc: Accumulation, Re-accumulation có mục tiêu chiều lên từ pha C, Distribution theo chiều xuống.
+
+Thẻ giai đoạn gọi tên theo cấu trúc đại diện của range khi cấu trúc đó đã phân định, từ mức Candidate trở lên: chưa xác nhận thì gọi `Accumulation đang hình thành`, tương tự với Re-accumulation và Distribution; Confirmed thì dùng tên đầy đủ. Mức Candidate hay Developing xem ở phần bằng chứng. Range sau Markup chưa phân định vẫn hiện hai giả thuyết.
 
 Quy tắc áp dụng cả khi giá đã rời range mà không còn xu hướng nào đứng, ví dụ thoát xuống rồi quay lại và Markdown bị bác bỏ. Khi đó Market State là trạng thái của cấu trúc, và đoạn trên dải giai đoạn kéo đến phiên cuối. Xu hướng còn đứng thì giai đoạn là xu hướng đó. Hết thời gian đánh giá (30 phiên không close trong range sau khi thoát xuống, 60 phiên sau khi thoát lên hoặc sau Confirmed) thì bằng chứng ngừng cập nhật, thẻ không còn gọi là cấu trúc hiện tại.
 

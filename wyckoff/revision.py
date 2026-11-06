@@ -102,6 +102,12 @@ class Verdict:
     reason: str = ""
 
 
+def structure_title(structure_type: str, level: str) -> str:
+    """Tên hiển thị của cấu trúc còn hiệu lực, dùng chung cho dashboard và diễn giải. Chưa xác nhận đều gọi là đang hình thành;
+    mức Candidate hay Developing vẫn xem được ở phần bằng chứng."""
+    return structure_type if level == CONFIRMED else f"{structure_type.replace('Initial ', '')} đang hình thành"
+
+
 def _final(history: tuple[Verdict, ...]) -> str:
     return history[-1].status
 
@@ -229,9 +235,9 @@ class RevisionResult:
         return _primary_verdict(self.range_verdicts.get(range_id), self.distribution_verdicts.get(range_id))
 
     def live_structure(self, range_id: int | None, date: pd.Timestamp) -> RangeVerdict | None:
-        """Cấu trúc đại diện đã phân định, đang hình thành hoặc đã xác nhận, còn được đánh giá tại `date`."""
+        """Cấu trúc đại diện đã phân định, từ mức tiềm năng trở lên, còn được đánh giá tại `date`."""
         v, decided = self.primary_of(range_id)
-        return v if v is not None and decided and v.status in (DEVELOPING, CONFIRMED) and v.active_on(date) else None
+        return v if v is not None and decided and v.status in (POTENTIAL, DEVELOPING, CONFIRMED) and v.active_on(date) else None
 
     def market_view(self, range_id: int | None, in_range: bool, date: pd.Timestamp) -> dict[str, Any]:
         """Tách hai khái niệm: Market State (Accumulation, Markup, Distribution, Markdown) và Market Structure
