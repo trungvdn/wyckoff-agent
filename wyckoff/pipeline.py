@@ -123,6 +123,7 @@ class AnalysisResult:
                 phase_segments=[g for g in self.revision.phase_segments if g.end_date >= ts],
                 labels=self.revision.labels,
                 range_verdicts=self.revision.range_verdicts,
+                distribution_verdicts=self.revision.distribution_verdicts,
             ),
         )
 

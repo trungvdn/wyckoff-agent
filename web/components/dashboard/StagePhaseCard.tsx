@@ -156,16 +156,17 @@ function TrendBody({ strength: s }: { strength: TrendStrength }) {
   );
 }
 
-/** Markdown: 5 điều kiện xác nhận, đạt hay chưa, kèm sự kiện hỗ trợ. */
-function MarkdownConditions({ stage: s }: { stage: StageInfo }) {
-  const met = s.markdown_conditions.filter((c) => c.met).length;
+/** Markup / Markdown: điều kiện đạt hay chưa, kèm sự kiện hỗ trợ và trạng thái vận động. */
+function TrendConditions({ stage: s }: { stage: StageInfo }) {
+  const met = s.trend_conditions.filter((c) => c.met).length;
   return (
     <div className="flex flex-col gap-2 border-t border-line pt-3">
       <p className="m-0 text-[13px] text-muted">
-        Điều kiện xác nhận Markdown: đạt {met}/{s.markdown_conditions.length}
+        Điều kiện {s.stage}: đạt {met}/{s.trend_conditions.length}
+        {s.trend_state ? ` · ${s.trend_state}` : ""}
       </p>
       <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[13px] text-fg-2">
-        {s.markdown_conditions.map((c) => (
+        {s.trend_conditions.map((c) => (
           <li key={c.key} className="grid grid-cols-[40px_minmax(0,1fr)] gap-2">
             <span className={cx("font-mono", c.met ? "text-pos" : "text-muted")}>{c.met ? "Đạt" : "Chưa"}</span>
             <span>
@@ -174,8 +175,8 @@ function MarkdownConditions({ stage: s }: { stage: StageInfo }) {
           </li>
         ))}
       </ul>
-      {s.markdown_supporting.length > 0 && (
-        <p className="m-0 text-[13px] text-muted">Sự kiện hỗ trợ: {s.markdown_supporting.join(", ")}.</p>
+      {s.trend_supporting.length > 0 && (
+        <p className="m-0 text-[13px] text-muted">Sự kiện hỗ trợ, không bắt buộc: {s.trend_supporting.join(", ")}.</p>
       )}
     </div>
   );
@@ -193,7 +194,8 @@ function AccumulationEvidence({ acc }: { acc: NonNullable<StageInfo["accumulatio
   return (
     <details className="flex flex-col gap-2 border-t border-line pt-3">
       <summary className="flex min-h-8 cursor-pointer items-center text-[13px] text-muted hover:text-fg">
-        Accumulation: {ACC_LEVEL[acc.level]} · {acc.conditions.filter((c) => c.met).length}/{acc.conditions.length} bằng chứng
+        {acc.structure_type.replace("Initial ", "")}: {ACC_LEVEL[acc.level]} · {acc.conditions.filter((c) => c.met).length}/{acc.conditions.length} bằng chứng
+        {acc.leaning ? ` · nghiêng về ${acc.leaning}` : ""}
       </summary>
       <ul className="m-0 mt-2 flex list-none flex-col gap-2 p-0 text-[13px] text-fg-2">
         {acc.conditions.map((c) => (
@@ -236,9 +238,16 @@ export function StagePhaseCard({ stage: s, phase, confidence }: { stage: StageIn
       )}
       {inRange && <RangeBody stage={s} phase={phase} confidence={confidence} />}
       {s.view === "trend" && s.strength && <TrendBody strength={s.strength} />}
-      {s.view === "trend" && s.markdown_conditions.length > 0 && <MarkdownConditions stage={s} />}
+      {s.view === "trend" && s.trend_conditions.length > 0 && <TrendConditions stage={s} />}
       {!inRange && <p className="m-0 text-[13px] text-muted">{s.reason}.</p>}
+      {(s.market.state || s.market.structure) && (
+        <p className="m-0 font-mono text-xs text-muted">
+          Market State: {s.market.state ?? "chưa xác định"}
+          {s.market.structure ? ` · Cấu trúc: ${s.market.structure}` : ""}
+        </p>
+      )}
       {s.accumulation && <AccumulationEvidence acc={s.accumulation} />}
+      {s.distribution && <AccumulationEvidence acc={s.distribution} />}
       {s.last_resolved && (
         <p className="m-0 text-[13px] text-muted">
           Range gần nhất: TR#{s.last_resolved.range_id} là {s.last_resolved.label} ({fmtDate(s.last_resolved.date)}).

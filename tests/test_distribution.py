@@ -284,7 +284,10 @@ def test_distribution_is_record_only(dist: pd.DataFrame) -> None:
     new_kinds = {EventType.BC, EventType.BC_FAILED, EventType.AR_D, EventType.ST_D, EventType.SOW, EventType.LPSY}
     assert not {e.kind for e in res.events + res.candidates} & new_kinds
     assert not {s.kind for s in res.phases.structures.values() for s in s.events} & new_kinds
-    text = str(build_payload(res, "X"))
+    # Phần nhật ký của payload và điểm tin cậy không có sự kiện phân phối; chỉ khối revision (ghi nhận) mới có
+    payload = build_payload(res, "X")
+    payload.pop("revision")
+    text = str(payload)
     assert "BC failed" not in text and "'SOW'" not in text and "'LPSY'" not in text
 
 

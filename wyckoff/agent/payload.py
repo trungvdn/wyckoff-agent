@@ -148,6 +148,8 @@ def _revision_block(result: AnalysisResult, range_id: int | None) -> dict[str, A
         "trend": None if hyp is None else hyp.to_dict(),
         "range_structure": (lambda v: None if v is None else v.structure_type)(rv.accumulation_of(range_id)),
         "accumulation": (lambda v: None if v is None else v.to_dict())(rv.range_verdicts.get(range_id)),
+        "distribution": (lambda v: None if v is None else v.to_dict())(rv.distribution_verdicts.get(range_id)),
+        "market": rv.market_view(result.current_stage().range_id, result.current_stage().range_id is not None, last_date),
         "phase": {"phase": None if pd.isna(row["phase"]) else row["phase"], "reason": row["reason"],
                   "since": _date(seg.start_date) if seg is not None else None},
         "events": [{**_event_dict(i, e), "assessment": rv.status_of(e)} for i, e in enumerate(own)],
@@ -236,7 +238,7 @@ def build_payload(result: AnalysisResult, symbol: str, market: dict[str, Any] | 
             {"range_id": r.range_id, "prior_stage": r.prior_stage, "stage": r.stage, "structure_type": r.structure_type,
              "exit": r.exit_direction, "resolved_date": _date(r.resolved_date),
              "revision_status": (lambda h: None if h is None else h.status)(result.revision.hypothesis_of_range(r.range_id)),
-             "revised_type": (lambda v: None if v is None else v.label)(result.revision.range_verdicts.get(r.range_id))}
+             "revised_type": (lambda v: None if v is None else v.label)(result.revision.primary_of(r.range_id)[0])}
             for r in resolved
         ],
         "revision": _revision_block(result, cur.range_id),
