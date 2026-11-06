@@ -23,13 +23,11 @@ Quy tắc (ngưỡng trong `RevisionConfig`, là khám phá trên mẫu H8, chư
     Markup từ SMA50 (5 close liên tiếp)
         nền giá là range gần nhất đã kết thúc; không có nền thì chỉ là tiềm năng. Close dưới SMA50 lúc vào xu hướng -> bác bỏ.
     Xu hướng kết thúc mà chưa đủ điều kiện: giữ nguyên tiềm năng.
-    Spring kéo dài
-        range thoát xuống, trong 30 phiên có phiên close >= support + 1 tick với demand, Markdown chưa xác nhận.
-        Sự kiện ở phiên close đầu tiên dưới support, xác nhận tại phiên demand. Volume và độ sâu khi thoát chỉ để mô tả.
-        Đã có SC xác nhận tạo sau cú thủng -> không còn là Spring của range cũ.
-    Spring hồi phục nhanh
-        range đã thoát xuống, Markdown đang bị bác bỏ, chưa có range mới: low lại thủng support rồi trong 4 phiên có close >= support + 1 tick với demand.
-        Không cần Test vì phiên hồi đã có demand. Close < đáy - 0,5 ATR -> bác bỏ.
+    Spring (định nghĩa đầy đủ: docs/event-definitions.md)
+        ứng viên: xuyên hỗ trợ của range, có dấu hiệu từ chối giá thấp. Volume cao không loại Spring.
+        xác nhận: lấy lại hỗ trợ, và có phiên demand, hoặc phản ứng tăng đủ xa, hoặc Test thành công.
+        bác bỏ (SPRING_FAILED): không lấy lại hỗ trợ kịp, đáy mới sau khi quay lại, không có phản ứng, Markdown xác nhận, có SC mới. Sau xác nhận: close < đáy - 0,5 ATR.
+        hồi phục nhanh hay kéo dài chỉ là nhãn theo số phiên đến khi lấy lại hỗ trợ.
     ST (định nghĩa đầy đủ: docs/event-definitions.md)
         ứng viên: sau SC + AR hoặc BC + AR, giá quay lại vùng cao trào với volume hoặc biên độ yếu hơn tương đối.
         xác nhận: không có áp lực tương đương cao trào, và giá phản ứng khỏi vùng kiểm tra.
@@ -217,7 +215,7 @@ class RangeVerdict:
 @dataclass
 class RevisionResult:
     hypotheses: list[TrendHypothesis]
-    events: list[Event]                       # Spring kéo dài, Spring hồi phục nhanh, LPS, SC và PS / AR / ST của SC, đã từng xác nhận
+    events: list[Event]                       # Spring, Spring Test, LPS, SC, PS, AR, ST theo định nghĩa mới, đã từng xác nhận
     candidates: list[Event]                   # các trường hợp chưa / không xác nhận
     assessments: dict[str, tuple[Verdict, ...]]   # event_id -> lịch sử tiềm năng / xác nhận / bác bỏ
     phase_series: pd.DataFrame                # pha hồi cứu mỗi phiên
@@ -701,164 +699,185 @@ def _lps_break(close: np.ndarray, res: float, start: int, watch: int, cfg: Confi
     return None
 
 
-def _extended_springs(
+def _springs(
     df: pd.DataFrame, ranges: list[TradingRange], hyps: list[TrendHypothesis], scs: list[Event], cfg: Config
-) -> tuple[list[Event], list[Event]]:
-    rc = cfg.revision
+) -> tuple[list[Event], list[Event], list[Event]]:
+    """Spring theo định nghĩa 06/11/2026 (docs/event-definitions.md): (đã từng xác nhận, ứng viên chưa / không xác nhận, Spring Test).
+    Xuyên hỗ trợ của range còn hoạt động, hoặc range đã thoát xuống mà Markdown đang bị bác bỏ và còn trong thời hạn đánh giá.
+    Candidate: có dấu hiệu từ chối giá thấp. Confirmed: đã lấy lại hỗ trợ, và có phiên demand, hoặc phản ứng tăng đủ xa, hoặc Test thành công.
+    Failed: không lấy lại hỗ trợ kịp, tạo đáy mới sau khi quay lại, không có phản ứng, Markdown xác nhận, có SC mới hoặc range mới.
+    Xuyên hỗ trợ mà chưa từng có dấu hiệu từ chối thì là breakdown thông thường, không ghi sự kiện. Chỉ dùng dữ liệu đến phiên đang xét."""
+    rc, sp = cfg.revision, cfg.spring
     r_ = _rounded(df, cfg.indicators.ratio_decimals)
     vr, cp = r_["vol_ratio"].to_numpy(dtype=float), r_["close_pos"].to_numpy(dtype=float)
-    o, c, low = (df[k].to_numpy(dtype=float) for k in ("open", "close", "low"))
+    o, h_, c, low, volume = (df[k].to_numpy(dtype=float) for k in ("open", "high", "close", "low", "volume"))
+    spread = h_ - low
     atr_ref = df["atr_ref"].to_numpy(dtype=float)
     last = len(df) - 1
     dates = df.index
-    range_conf = [r.confirmed_idx for r in ranges]
-    rng_by_id = {r.range_id: r for r in ranges}
-    events: list[Event] = []
-    candidates: list[Event] = []
-    for h in hyps:
-        if h.stage != MARKDOWN or h.source != "range_exit":
-            continue
-        rng = rng_by_id[h.range_id]
-        x, sup = h.start_idx, rng.support
-        tick = tick_size(sup, cfg.data.exchange)
-        conf_md = next((v.idx for v in h.history if v.status == CONFIRMED), None)
-        b = x
-        while b > 0 and c[b - 1] < sup:
-            b -= 1
-        limit = min(x + rc.spring_window, last)
-        next_range = min((q for q in range_conf if q > x), default=last + 1)
-        end_reason = f"không có phiên demand trong {rc.spring_window} phiên"
-        found = None
-        ended_at = limit if x + rc.spring_window <= last else None
-        # SC mới tạo sau cú thủng: giá đã sang cấu trúc mới, cú thủng không còn là Spring của range cũ
-        later_scs = sorted((s for s in scs if s.idx > b), key=lambda s: s.confirmed_idx)
-
-        def new_sc_at(j: int) -> Event | None:
-            return next((s for s in later_scs if s.confirmed_idx <= j and (s.invalidated is None or s.invalidated.idx > j)), None)
-
-        for t in range(x + 1, limit + 1):
-            if t >= next_range:
-                ended_at, end_reason = t, "range mới đã xác nhận"
-                break
-            if conf_md is not None and t >= conf_md:
-                ended_at, end_reason = t, "Markdown đã xác nhận"
-                break
-            sc_new = new_sc_at(t)
-            if sc_new is not None:
-                ended_at, end_reason = t, f"đã có SC mới {vn_ts(sc_new.date)}: cấu trúc mới, không phải Spring của range cũ"
-                break
-            if c[t] >= sup + cfg.spring.recovery_min_ticks * tick - _EPS and _is_demand(t, vr, cp, o, c, cfg):
-                found = t
-                break
-        stop = found if found is not None else x
-        below = c[b:stop + 1] < sup
-        details: dict[str, Any] = {
-            "spring_type": "extended", "support": round(sup, 4), "exit_date": f"{dates[x]:%Y-%m-%d}",
-            "lowest_low": float(low[b:stop + 1].min()),
-            "penetration_atr": round(float((sup - low[b:stop + 1].min()) / atr_ref[x]), 3),
-            "depth_close_pct": round(float((sup - c[b:stop + 1].min()) / sup * 100), 2),
-            "bars_below_support": int(below.sum()),
-            "mean_vol_ratio_below_support": round(float(np.nanmean(vr[b:stop + 1][below])), 3) if below.any() else None,
-            "max_vol_ratio_below_support": round(float(np.nanmax(vr[b:stop + 1][below])), 3) if below.any() else None,
-        }
-        weak = details["mean_vol_ratio_below_support"] is not None and details["mean_vol_ratio_below_support"] < rc.weak_break_vol_ratio
-        details["breakdown"] = "yếu" if weak else "mạnh"
-        pending = StatusChange(EventStatus.CANDIDATE, x, dates[x], "thoát xuống, chờ demand quay lại")
-        if found is None:
-            hist = [pending] + ([StatusChange(EventStatus.INVALIDATED, ended_at, dates[ended_at], end_reason)] if ended_at is not None else [])
-            candidates.append(_candidate(df, EventType.SPRING, b, h.range_id, details, hist))
-            continue
-        details.update({"recovery_date": f"{dates[found]:%Y-%m-%d}", "recovery_close": float(c[found]),
-                        "recovery_vol_ratio": float(vr[found]), "recovery_close_pos": float(cp[found])})
-        e = _make_event(df, EventType.SPRING, b, found, h.range_id, details)
-        hist = [pending, StatusChange(EventStatus.CONFIRMED, found, dates[found], "close quay lại trên support với demand")]
-        k = cfg.phase.spring_invalid_atr
-        spring_low = details["lowest_low"]
-        t = _first_close_below(c, found, cfg.lifecycle.watch_bars, lambda j: spring_low - k * atr_ref[j])
-        # SC tạo trước phiên hồi nhưng xác nhận sau đó cũng làm mất Spring
-        late_sc = next((s for s in later_scs if s.idx <= found and s.confirmed_idx > found), None)
-        if late_sc is not None and (t is None or late_sc.confirmed_idx < t):
-            hist.append(StatusChange(EventStatus.INVALIDATED, late_sc.confirmed_idx, dates[late_sc.confirmed_idx],
-                                     f"SC mới {vn_ts(late_sc.date)} đã xác nhận: cấu trúc mới, không phải Spring của range cũ"))
-        elif t is not None:
-            hist.append(StatusChange(EventStatus.INVALIDATED, t, dates[t], f"close {vn_num(c[t])} < đáy Spring {vn_num(spring_low)} - {vn_g(k)} ATR"))
-        events.append(replace(e, history=tuple(hist)))
-    return events, candidates
-
-
-def _quick_springs(
-    df: pd.DataFrame, ranges: list[TradingRange], hyps: list[TrendHypothesis], scs: list[Event], cfg: Config
-) -> list[Event]:
-    """Spring hồi phục nhanh: giá đã thoát xuống rồi quay lại range (Markdown đang bị bác bỏ), low lại thủng support,
-    và trong `spring_quick_bars` phiên, tính cả phiên thủng, có close trên support với demand. Bộ nhận diện của nhật ký không xét
-    trường hợp này vì range đã kết thúc. Không có demand thì không phải Spring. Chỉ dùng dữ liệu đến phiên đang xét."""
-    rc = cfg.revision
-    r_ = _rounded(df, cfg.indicators.ratio_decimals)
-    vr, cp = r_["vol_ratio"].to_numpy(dtype=float), r_["close_pos"].to_numpy(dtype=float)
-    o, c, low = (df[k].to_numpy(dtype=float) for k in ("open", "close", "low"))
-    atr_ref = df["atr_ref"].to_numpy(dtype=float)
-    last = len(df) - 1
-    dates = df.index
-    range_conf = [r.confirmed_idx for r in ranges]
-    rng_by_id = {r.range_id: r for r in ranges}
-    events: list[Event] = []
-    for h in hyps:
-        if h.stage != MARKDOWN or h.source != "range_exit":
-            continue
-        first_rej = next((v.idx for v in h.history if v.status == REJECTED), None)
-        if first_rej is None:
-            continue
-        rng = rng_by_id[h.range_id]
+    range_conf = sorted(r.confirmed_idx for r in ranges)
+    md_by = {h.range_id: h for h in hyps if h.stage == MARKDOWN and h.source == "range_exit"}
+    atr_k = cfg.phase.spring_invalid_atr
+    confirmed: list[Event] = []
+    others: list[Event] = []
+    tests: list[Event] = []
+    for rng in ranges:
         sup, res = rng.support, rng.resistance
         tick = tick_size(sup, cfg.data.exchange)
-        conf_md = next((v.idx for v in h.history if v.status == CONFIRMED), None)
-        next_range = min((q for q in range_conf if q > h.start_idx), default=last + 1)
-        limit = _watch_stop(c, h.start_idx, sup, res, rc.spring_window, min(last, next_range - 1, h.end_idx))
+        x = rng.end_confirmed_idx
+        next_range = next((q for q in range_conf if q > rng.confirmed_idx), last + 1)
+        hyp = md_by.get(rng.range_id) if rng.exit_direction == "down" else None
+        conf_md = None if hyp is None else next((v.idx for v in hyp.history if v.status == CONFIRMED), None)
+        if x is None:
+            limit = min(last, next_range - 1)
+        elif rng.exit_direction == "down":
+            limit = _watch_stop(c, x, sup, res, rc.spring_window, min(last, next_range - 1))
+        else:
+            limit = min(x, last, next_range - 1)
 
         def pen(j: int) -> float:
-            return max(cfg.spring.min_penetration_atr * atr_ref[j], cfg.spring.min_penetration_ticks * tick)
+            return max(sp.min_penetration_atr * atr_ref[j], sp.min_penetration_ticks * tick)
 
-        b = first_rej + 1
+        kept: list[Event] = []
+        b = max(rng.confirmed_idx + sp.min_bars_after_confirm, 1)
         while b <= limit:
-            if not (low[b] < sup - pen(b) - _EPS and low[b - 1] >= sup - pen(b - 1) - _EPS and h.status_at(b - 1) == REJECTED):
+            eligible = x is None or b <= x or (hyp is not None and hyp.status_at(b - 1) == REJECTED)
+            if not (eligible and low[b] < sup - pen(b) - _EPS and low[b - 1] >= sup - pen(b - 1) - _EPS):
                 b += 1
                 continue
             later_scs = [s for s in scs if s.idx >= b]
-            found = None
-            for k in range(b, min(b + rc.spring_quick_bars, limit + 1)):
-                if (conf_md is not None and k >= conf_md) or any(s.confirmed_idx <= k and (s.invalidated is None or s.invalidated.idx > k) for s in later_scs):
+            lowest = float(low[b])
+            cand = reclaim = conf = None
+            how = ""
+            fail: tuple[int, str] | None = None
+            end = b
+            for t in range(b, last + 1):
+                end = t
+                if t > limit and reclaim is None:
+                    fail = t, "hết thời hạn đánh giá range"
                     break
-                if c[k] >= sup + cfg.spring.recovery_min_ticks * tick - _EPS and _is_demand(k, vr, cp, o, c, cfg):
-                    found = k
+                if t >= next_range:
+                    fail = t, "range mới đã xác nhận"
                     break
-            if found is None:
-                b += 1
+                if conf_md is not None and t >= conf_md:
+                    fail = t, "Markdown đã xác nhận"
+                    break
+                sc_new = next((s for s in later_scs if s.confirmed_idx <= t and (s.invalidated is None or s.invalidated.idx > t)), None)
+                if sc_new is not None:
+                    fail = t, f"đã có SC mới {vn_ts(sc_new.date)}: cấu trúc mới, không phải Spring của range cũ"
+                    break
+                if reclaim is not None and t > reclaim and low[t] < lowest - _EPS:
+                    fail = t, f"tạo đáy mới {vn_num(low[t])} sau khi quay lại hỗ trợ"
+                    break
+                lowest = min(lowest, float(low[t]))
+                if reclaim is None:
+                    if cand is None and (cp[t] >= sp.recovery_min_close_pos - _EPS or c[t] >= sup - _EPS):
+                        cand = t
+                    if c[t] >= sup + sp.recovery_min_ticks * tick - _EPS:
+                        reclaim = t
+                        cand = t if cand is None else cand
+                    elif t - b + 1 >= rc.spring_max_bars:
+                        fail = t, f"không lấy lại hỗ trợ trong {rc.spring_max_bars} phiên"
+                        break
+                if reclaim is None:
+                    continue
+                pen_bars = [j for j in range(b, reclaim + 1) if low[j] < sup]
+                if _is_demand(t, vr, cp, o, c, cfg) and c[t] >= sup - _EPS:
+                    conf, how = t, "phiên demand trên hỗ trợ"
+                elif c[t] >= lowest + rc.spring_reaction_atr * atr_ref[b] - _EPS:   # ATR tại phiên xuyên: giá đi ngang làm ATR giảm, không phải phản ứng
+                    conf, how = t, f"phản ứng tăng tối thiểu {vn_g(rc.spring_reaction_atr)} ATR từ đáy"
+                elif t > reclaim and low[t] <= sup + sp.test_proximity_atr * atr_ref[t] + _EPS and sup - _EPS <= c[t] <= res + _EPS \
+                        and volume[t] < sp.test_vol_factor * max(volume[j] for j in pen_bars) and spread[t] < max(spread[j] for j in pen_bars):
+                    conf, how = t, "Test thành công: volume thấp, biên độ hẹp, giữ hỗ trợ"
+                if conf is not None:
+                    break
+                if t - reclaim >= sp.test_window:
+                    fail = t, f"không có phản ứng cầu trong {sp.test_window} phiên sau khi quay lại"
+                    break
+            next_b = end + 1
+            if cand is None:
+                b = next_b           # breakdown thông thường, chưa từng từ chối giá thấp
                 continue
-            below = c[b:found + 1] < sup
-            spring_low = float(low[b:found + 1].min())
+            stop = reclaim if reclaim is not None else end
+            seg = range(b, stop + 1)
+            below = [j for j in seg if c[j] < sup]
+            pen_all = [j for j in seg if low[j] < sup]
+            # Xuyên nhiều phiên: Spring đặt tại phiên xa range nhất, tức phiên có high thấp nhất. Mốc này chốt tại phiên lấy lại hỗ trợ
+            at = min(pen_all, key=lambda j: (h_[j], j)) if pen_all else b
+            max_vr = float(max(vr[j] for j in pen_all)) if pen_all else None
             details: dict[str, Any] = {
-                "spring_type": "quick", "support": round(sup, 4), "exit_date": f"{dates[h.start_idx]:%Y-%m-%d}",
-                "lowest_low": spring_low,
-                "penetration_atr": round(float((sup - spring_low) / atr_ref[b]), 3),
-                "bars_below_support": int(below.sum()),
-                "max_vol_ratio_below_support": round(float(np.nanmax(vr[b:found + 1][below])), 3) if below.any() else None,
-                "recovery_date": f"{dates[found]:%Y-%m-%d}", "recovery_bars": found - b + 1, "recovery_close": float(c[found]),
-                "recovery_vol_ratio": float(vr[found]), "recovery_close_pos": float(cp[found]),
+                "spring_definition": "candidate_confirmed",
+                "spring_type": "quick" if reclaim is not None and reclaim - b + 1 <= rc.spring_quick_bars else "extended",
+                "support": round(sup, 4), "lowest_low": lowest, "penetration_atr": round(float((sup - lowest) / atr_ref[b]), 3),
+                "penetration_date": f"{dates[b]:%Y-%m-%d}", "bars_below_support": len(below), "max_vol_ratio_below_support": max_vr,
+                "volume_profile": None if max_vr is None else "thấp" if max_vr < sp.max_vol_ratio else "cao",
             }
-            e = _make_event(df, EventType.SPRING, b, found, h.range_id, details)
-            hist = [StatusChange(EventStatus.CANDIDATE, b, dates[b], "low lại thủng support, chờ hồi với demand"),
-                    StatusChange(EventStatus.CONFIRMED, found, dates[found], "close quay lại trên support với demand")]
-            atr_k = cfg.phase.spring_invalid_atr
-            t = _first_close_below(c, found, cfg.lifecycle.watch_bars, lambda j: spring_low - atr_k * atr_ref[j])
-            late_sc = next((s for s in later_scs if s.idx <= found and s.confirmed_idx > found), None)
-            if late_sc is not None and (t is None or late_sc.confirmed_idx < t):
+            if x is not None and b >= x - cfg.ranges.exit_bars + 1 or (x is not None and reclaim is not None and reclaim > x):
+                details["exit_date"] = f"{dates[x]:%Y-%m-%d}"
+            if reclaim is not None:
+                details.update({"recovery_date": f"{dates[reclaim]:%Y-%m-%d}", "recovery_bars": reclaim - b + 1, "recovery_close": float(c[reclaim]),
+                                "recovery_vol_ratio": float(vr[reclaim]), "recovery_close_pos": float(cp[reclaim])})
+            pending = StatusChange(EventStatus.CANDIDATE, cand, dates[cand], "xuyên hỗ trợ, có dấu hiệu từ chối giá thấp")
+            if conf is None:
+                hist = [pending] + ([StatusChange(EventStatus.INVALIDATED, fail[0], dates[fail[0]], fail[1])] if fail else [])
+                others.append(_candidate(df, EventType.SPRING, at, rng.range_id, details, hist))
+                if fail is None:
+                    break
+                b = next_b
+                continue
+            near = [s for s in kept if s.invalidated is None and b - s.idx < sp.merge_bars]
+            if near and lowest >= min(s.details["lowest_low"] for s in near) - _EPS:
+                into = min(near, key=lambda s: s.details["lowest_low"])
+                others.append(_candidate(df, EventType.SPRING, at, rng.range_id, {**details, "merged_into_date": f"{into.date:%Y-%m-%d}"}, [
+                    pending, StatusChange(EventStatus.REVISED, conf, dates[conf], f"gộp vào Spring {vn_ts(into.date)} (cách dưới {sp.merge_bars} phiên, đáy không thấp hơn)")]))
+                b = next_b
+                continue
+            details["confirmation"] = how
+            hist = [pending, StatusChange(EventStatus.CONFIRMED, conf, dates[conf], how)]
+            gone = _first_close_below(c, conf, cfg.lifecycle.watch_bars, lambda j: lowest - atr_k * atr_ref[j])
+            late_sc = next((s for s in later_scs if s.idx <= conf and s.confirmed_idx > conf), None)
+            if late_sc is not None and (gone is None or late_sc.confirmed_idx < gone):
                 hist.append(StatusChange(EventStatus.INVALIDATED, late_sc.confirmed_idx, dates[late_sc.confirmed_idx],
                                          f"SC mới {vn_ts(late_sc.date)} đã xác nhận: cấu trúc mới, không phải Spring của range cũ"))
-            elif t is not None:
-                hist.append(StatusChange(EventStatus.INVALIDATED, t, dates[t], f"close {vn_num(c[t])} < đáy Spring {vn_num(spring_low)} - {vn_g(atr_k)} ATR"))
-            events.append(replace(e, history=tuple(hist)))
-            b = found + 1
-    return events
+            elif gone is not None:
+                hist.append(StatusChange(EventStatus.INVALIDATED, gone, dates[gone], f"close {vn_num(c[gone])} < đáy Spring {vn_num(lowest)} - {vn_g(atr_k)} ATR"))
+            # Đáy mới trong khoảng gộp: Spring mới thay Spring trước
+            for s in near:
+                i_s = next(i for i, y in enumerate(confirmed) if y is s)
+                extra = StatusChange(EventStatus.INVALIDATED, conf, dates[conf], f"đã có Spring {vn_ts(dates[at])} với đáy thấp hơn")
+                base = [z for z in s.history if z.status != EventStatus.INVALIDATED or z.idx < conf]
+                if not any(z.status == EventStatus.INVALIDATED for z in base):
+                    upd = replace(s, history=tuple(base) + (extra,))
+                    confirmed[i_s] = upd
+                    kept[kept.index(s)] = upd
+            e = replace(_make_event(df, EventType.SPRING, at, conf, rng.range_id, details), history=tuple(hist))
+            confirmed.append(e)
+            kept.append(e)
+            # Spring Test: lần kiểm tra đầu tiên sau xác nhận, hoặc chính phiên xác nhận bằng Test
+            pen_bars = [j for j in range(b, reclaim + 1) if low[j] < sup]
+            shake_vol, shake_spread = max(volume[j] for j in pen_bars), max(spread[j] for j in pen_bars)
+            start = conf if how.startswith("Test") else conf + 1
+            for t in range(start, min(reclaim + sp.test_window, last, next_range - 1) + 1):
+                if low[t] < lowest - _EPS:
+                    break
+                if low[t] <= sup + sp.test_proximity_atr * atr_ref[t] + _EPS and sup - _EPS <= c[t] <= res + _EPS \
+                        and volume[t] < sp.test_vol_factor * shake_vol and spread[t] < shake_spread:
+                    tests.append(_make_event(df, EventType.TEST, t, t, rng.range_id, {
+                        "test_definition": "spring_test", "spring_date": f"{dates[at]:%Y-%m-%d}", "spring_low": lowest,
+                        "volume_vs_shakeout": round(float(volume[t] / shake_vol), 3), "support": round(sup, 4)}))
+                    break
+            b = next_b
+    # Spring bị bác bỏ thì Test của nó bị bác bỏ theo
+    by_spring = {(e.range_id, f"{e.date:%Y-%m-%d}"): e for e in confirmed}
+    linked: list[Event] = []
+    for t in tests:
+        hist = [StatusChange(EventStatus.CONFIRMED, t.idx, t.date)]
+        gone = by_spring[(t.range_id, t.details["spring_date"])].invalidated
+        if gone is not None:
+            at = max(gone.idx, t.idx)
+            hist.append(StatusChange(EventStatus.INVALIDATED, at, dates[at], f"Spring {vn_ts(pd.Timestamp(t.details['spring_date']))} bị bác bỏ"))
+        linked.append(replace(t, history=tuple(hist)))
+    return confirmed, others, linked
 
 
 def _lps_strengths(
@@ -2034,14 +2053,16 @@ def _revise_phases(
             drop = (structure_ids == sid) & (phase == "A")
             phase[drop] = None
             reason[drop] = ""
-    spring_by = {e.range_id: e for e in springs if e.invalidated is None}
+    spring_by: dict[int | None, Event] = {}
+    for e in sorted((x for x in springs if x.invalidated is None), key=lambda x: x.idx):
+        spring_by.setdefault(e.range_id, e)
     n = len(series)
     for h in hyps:
         if h.stage != MARKDOWN or h.source != "range_exit" or h.status == CONFIRMED:
             continue
         marker = f"TR#{h.range_id} thoát xuống"
         sp = spring_by.get(h.range_id)
-        spring_reason = "" if sp is None else f"Spring kéo dài {vn_ts(sp.date)}, xác nhận {vn_ts(sp.confirmed_date)}: quay lại range với demand"
+        spring_reason = "" if sp is None else f"{_event_name(sp)} {vn_ts(sp.date)}, xác nhận {vn_ts(sp.confirmed_date)}: quay lại range"
         if sp is not None:
             for t in range(sp.idx, h.start_idx):   # các phiên đầu của cú thủng, trước phiên xác nhận thoát
                 if range_ids[t] == h.range_id and phase[t] in ("A", "B", "C"):
@@ -2079,12 +2100,12 @@ def build_revision(
     lps, lps_cands = _lps_events(df, ranges, events, swings, cfg)
     hyps = _trend_hypotheses(df, stages, ranges, events, swings, distribution, cfg, lps)
     scs_raw, sc_others = _selling_climaxes(df, stages, cfg)
-    springs, spring_cands = _extended_springs(df, ranges, hyps, scs_raw, cfg)
-    springs = _with_ids(springs, rng_by_id, "EXT")
-    quick = _with_ids(_quick_springs(df, ranges, hyps, scs_raw, cfg), rng_by_id, "QUICK")
+    springs, spring_cands, spring_tests = _springs(df, ranges, hyps, scs_raw, cfg)
+    springs = _with_ids(springs, rng_by_id, "V2")
+    spring_tests = _with_ids(spring_tests, rng_by_id, "V2")
     lps = _with_ids(lps, rng_by_id, "V2")
     lps_cands = _with_ids(lps_cands, rng_by_id, "V2C")
-    cands = _with_ids(spring_cands, rng_by_id, "EXT") + lps_cands
+    cands = _with_ids(spring_cands, rng_by_id, "V2C") + lps_cands
     # ID của ứng viên có thể trùng với sự kiện đã xác nhận khác phiên kết thúc: thêm hậu tố
     taken = {e.event_id for e in springs + lps}
     cands = [replace(c, event_id=f"{c.event_id}-C") if c.event_id in taken else c for c in cands]
@@ -2097,24 +2118,29 @@ def build_revision(
     sts = _with_ids(sts_raw, rng_by_id, "V2")
     st_others = _with_ids(st_others, rng_by_id, "V2C")
     sc_others = _with_ids(sc_others, rng_by_id, "V2C")
-    everything = events + candidates + springs + quick + lps + cands + distribution + scs + sc_children + sc_others + ars + ar_others + sts + st_others
+    everything = events + candidates + springs + spring_tests + lps + cands + distribution + scs + sc_children + sc_others + ars + ar_others + sts + st_others
     assessments = _log_sc_assessments(df, events, scs, sc_others, _assess_all(df, everything, rng_by_id, cfg))
     assessments = _log_lps_assessments(df, events, lps, [c for c in cands if c.kind == EventType.LPS], assessments)
     assessments = _log_redefined_assessments(df, events + distribution, (EventType.AR, EventType.AR_D), ar_others + ars,
                                              "không đạt định nghĩa AR: thiếu phản ứng biên độ lớn hoặc chưa rời vùng cao trào đủ xa", assessments)
+    assessments = _log_redefined_assessments(df, events, (EventType.SPRING,), [c for c in cands if c.kind == EventType.SPRING] + springs,
+                                             "không đạt định nghĩa Spring: không có dấu hiệu từ chối giá thấp hoặc không có phản ứng cầu", assessments)
+    assessments = _log_redefined_assessments(df, events, (EventType.TEST,), spring_tests,
+                                             "không đạt định nghĩa Spring Test", assessments)
     assessments = _log_redefined_assessments(df, events + distribution, (EventType.ST, EventType.ST_D), st_others + sts,
                                              "không đạt định nghĩa ST: không có phản ứng giá hoặc còn áp lực mạnh", assessments)
-    new_view = [e for e in events if e.kind not in (EventType.LPS, EventType.ST)] + lps + springs + quick + [e for e in sts if e.kind == EventType.ST]
+    new_view = [e for e in events if e.kind not in (EventType.LPS, EventType.ST, EventType.SPRING, EventType.TEST)] + lps + springs + spring_tests + [e for e in sts if e.kind == EventType.ST]
     verdicts = _range_verdicts(df, ranges, stages, hyps, new_view, swings, scs, assessments, cfg)
     dist_view = [e for e in distribution if e.kind != EventType.ST_D] + [e for e in sts if e.kind == EventType.ST_D]
     dist_verdicts = _distribution_verdicts(df, ranges, stages, hyps, new_view, dist_view, swings, assessments, verdicts, cfg)
     primary = {r.range_id: _primary_verdict(verdicts.get(r.range_id), dist_verdicts.get(r.range_id))[0] for r in ranges}
-    series = _revise_phases(phases, hyps, springs, scs, assessments)
+    # Pha C trên đoạn range đã thoát: theo Spring sớm nhất có liên quan đến cú thoát
+    series = _revise_phases(phases, hyps, [e for e in springs if e.details.get("exit_date")], scs, assessments)
     # Range có đại diện là Distribution thì không vẽ pha Accumulation / Re-accumulation
     non_dist = {rid: v for rid, v in primary.items() if v is not None and not v.is_distribution}
     series = _accumulation_phases(df, series, ranges, non_dist, hyps, new_view + sc_children, scs, assessments, cfg)
     series = _distribution_phases(df, series, ranges, primary, new_view, distribution, assessments, cfg)
-    return RevisionResult(hypotheses=hyps, events=springs + quick + lps + scs + sc_children + ars + sts, candidates=cands + sc_others + ar_others + st_others, assessments=assessments,
+    return RevisionResult(hypotheses=hyps, events=springs + spring_tests + lps + scs + sc_children + ars + sts, candidates=cands + sc_others + ar_others + st_others, assessments=assessments,
                           phase_series=series, phase_segments=_segments(series),
                           labels={e.event_id: f"{_event_name(e)} {vn_ts(e.date)}" for e in everything},
                           range_verdicts=verdicts, distribution_verdicts=dist_verdicts)

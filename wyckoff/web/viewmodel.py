@@ -43,8 +43,8 @@ EVENT_TEXT = {
     EventType.UT.value: "Phá đỉnh giả rồi yếu đi – cảnh báo nguồn cung",
 }
 RECLAIM_TEXT = "Lấy lại kháng cự với volume cao sau khi thoát xuống"
-EXTENDED_SPRING_TEXT = "Thoát xuống rồi quay lại với demand (Spring kéo dài)"
-QUICK_SPRING_TEXT = "Thủng support rồi hồi nhanh với demand (Spring hồi phục nhanh)"
+EXTENDED_SPRING_TEXT = "Xuyên hỗ trợ nhiều phiên rồi quay lại (Spring kéo dài)"
+QUICK_SPRING_TEXT = "Xuyên hỗ trợ rồi hồi nhanh (Spring hồi phục nhanh)"
 LPS_TEXT = "Điều chỉnh về hỗ trợ, cung yếu đi, cầu quay lại"
 PHASE_POTENTIAL_TITLE = "Thoát xuống, chờ xác nhận"
 STATUS_VN_LABEL = {POTENTIAL: " (tiềm năng)", DEVELOPING: " (đang hình thành)", CONFIRMED: "", REJECTED: " (đã bác bỏ)"}
@@ -227,7 +227,7 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
     cur_rid = s.rng.range_id if s is not None and s.rng is not None else None
     # LPS của nhật ký không đạt định nghĩa mới thì không phải LPS: không vẽ (LPS mới trùng phiên được vẽ ở dưới)
     chart_events = [_chart_event(e, EVENTS_ABOVE, (e.kind, e.idx) in struct_ids, rv.status_of(e))
-                    for e in result.events if e.kind not in (EventType.SC_FAILED, EventType.LPS, EventType.AR, EventType.ST)]
+                    for e in result.events if e.kind not in (EventType.SC_FAILED, EventType.LPS, EventType.AR, EventType.ST, EventType.SPRING, EventType.TEST)]
     # Sự kiện mới của lớp đánh giá lại, và ứng viên đang chờ xác nhận (ứng viên đã hết hạn không vẽ).
     # SC, PS, AR, ST trùng phiên với nhật ký chỉ vẽ một lần.
     shown = {(c["kind"], c["i"]) for c in chart_events}
@@ -235,7 +235,7 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
         if (e.kind.value, e.idx) not in shown:
             shown.add((e.kind.value, e.idx))
             chart_events.append(_chart_event(e, REVISED_ABOVE, e.range_id == cur_rid, rv.status_of(e)))
-    for e in result.candidates + rv.candidates:
+    for e in [x for x in result.candidates if x.kind != EventType.SPRING] + rv.candidates:
         if rv.status_of(e) == POTENTIAL and (e.kind.value, e.idx) not in shown:
             shown.add((e.kind.value, e.idx))
             chart_events.append(_chart_event(e, REVISED_ABOVE, e.range_id == cur_rid, POTENTIAL))
@@ -262,7 +262,9 @@ def build_view(result: AnalysisResult, payload: dict[str, Any], symbol: str, tf:
         for e in {(x["kind"], x["date"]): x for x in revision["events"] + payload["evidence_events"]
                   if (x["kind"] != EventType.LPS.value or x["details"].get("lps_definition"))
                   and (x["kind"] not in (EventType.AR.value, EventType.AR_D.value) or x["details"].get("ar_definition"))
-                  and (x["kind"] not in (EventType.ST.value, EventType.ST_D.value) or x["details"].get("st_definition"))}.values()
+                  and (x["kind"] not in (EventType.ST.value, EventType.ST_D.value) or x["details"].get("st_definition"))
+                  and (x["kind"] != EventType.SPRING.value or x["details"].get("spring_definition"))
+                  and (x["kind"] != EventType.TEST.value or x["details"].get("test_definition"))}.values()
     ]
     events.sort(key=lambda e: e["date"])
     exchange = result.cfg.data.exchange

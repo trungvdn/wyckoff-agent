@@ -8,6 +8,7 @@ Tài liệu sống, bổ sung dần từng sự kiện. Định nghĩa các giai
 | LPS (Last Point of Support) | Định nghĩa 05/11/2026 |
 | AR (Automatic Rally / Automatic Reaction) | Định nghĩa 06/11/2026 |
 | ST (Secondary Test) | Định nghĩa 06/11/2026 |
+| Spring | Định nghĩa 06/11/2026 |
 | Các sự kiện khác | Chưa định nghĩa lại, sẽ bổ sung |
 
 ---
@@ -121,6 +122,156 @@ Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫ
 
 - Các ngưỡng trên là diễn giải định lượng do Claude đề xuất, trừ 3% và 4 phiên do người dùng đặt; cần được rà soát cùng người dùng.
 - Mức "volume cao hơn phiên ứng viên" nhẹ hơn nhiều so với ngưỡng 1,5 lần TB20 trước đây, vì sau một nhịp volume cạn, nhịp đảo chiều thường có volume dưới trung bình.
+
+---
+
+## Spring
+
+### Định nghĩa
+
+Spring là sự kiện giá xuyên thủng xuống dưới vùng hỗ trợ của Trading Range, thường xuất hiện trong Accumulation hoặc Re-accumulation, sau đó nhanh chóng quay trở lại bên trong TR. Bản chất của Spring là một false breakdown:
+
+- Giá xuyên thủng vùng hỗ trợ, kích hoạt lệnh stop-loss và lệnh bán theo xu hướng.
+- Lượng cung được hấp thụ bởi lực cầu.
+- Giá không thể duy trì dưới vùng hỗ trợ và nhanh chóng quay trở lại TR.
+- Nếu được xác nhận, Spring cho thấy nguồn cung tại vùng giá thấp có thể đã suy yếu đáng kể.
+
+Spring có thể là dấu hiệu quá trình tích lũy đang tiến triển, nhưng không tự động xác nhận cổ phiếu đã sẵn sàng bước vào Markup.
+
+**Kết luận:** bằng chứng quan trọng nhất không phải là việc giá xuyên thủng đáy, mà là khả năng lấy lại hỗ trợ và phản ứng của cung cầu sau đó.
+
+### Điều kiện nhận diện
+
+**A. Bối cảnh**
+
+| Điều kiện | Mô tả |
+|---|---|
+| Có Trading Range | Giá đã hình thành vùng hỗ trợ và kháng cự tương đối rõ |
+| Có hỗ trợ trước đó | Có một vùng đáy được kiểm tra hoặc có ý nghĩa cấu trúc |
+| Bối cảnh phù hợp | Thường nằm trong Accumulation hoặc Re-accumulation |
+| Có thể có ST trước đó | Thường sau một hoặc nhiều lần kiểm tra hỗ trợ, không bắt buộc |
+
+Không phát hiện Spring chỉ dựa trên việc giá tạo đáy thấp hơn đáy trước đó. Phải xác định được Trading Range và vùng hỗ trợ tham chiếu.
+
+**B. Hành động giá**
+
+1. Giá xuyên thủng vùng hỗ trợ TR.
+2. Mức thấp nhất của phiên hoặc một số phiên nằm dưới vùng hỗ trợ.
+3. Giá nhanh chóng quay trở lại bên trong TR.
+4. Giá đóng cửa có thể nằm trên vùng hỗ trợ, thể hiện sự từ chối mức giá thấp.
+
+Không bắt buộc phải có bóng nến dưới dài. Spring vẫn có thể có thân nến tương đối lớn nếu giá giảm mạnh rồi được hấp thụ và hồi phục.
+
+**C. Volume và biên độ**
+
+| Yếu tố | Dấu hiệu tích cực |
+|---|---|
+| Volume | Thường thấp hơn các phiên bán tháo trước đó, hoặc không tăng tương xứng với mức phá đáy |
+| Biên độ | Có thể rộng trong phiên xuyên thủng, nhưng cần quan sát phản ứng hồi phục |
+| Giá đóng cửa | Gần vùng cao của nến, hoặc quay lại trên hỗ trợ |
+| Volume tương đối | So sánh với TB20 và các phiên kiểm tra hỗ trợ trước đó |
+
+Không đặt điều kiện volume bắt buộc phải thấp. Spring có volume cao vẫn có thể hợp lệ nếu lực cầu hấp thụ mạnh và giá nhanh chóng lấy lại vùng hỗ trợ.
+
+**D. Xác nhận**
+
+- Giá không tiếp tục giảm và đóng cửa dưới vùng hỗ trợ.
+- Xuất hiện phản ứng tăng giá.
+- Khi giá kiểm tra lại vùng đáy Spring, volume thường thấp hơn và biên độ thu hẹp.
+- Giá giữ được vùng hỗ trợ và xuất hiện dấu hiệu cầu quay trở lại.
+
+Spring có thể được xác nhận bằng phản ứng hồi phục mạnh, hoặc thông qua một lần kiểm tra thành công (Spring Test).
+
+### Ba trạng thái
+
+| Trạng thái | Điều kiện |
+|---|---|
+| `SPRING_CANDIDATE` | Giá xuyên thủng vùng hỗ trợ TR và có dấu hiệu từ chối giá thấp |
+| `SPRING_CONFIRMED` | Giá quay lại TR, không duy trì được breakdown và có phản ứng cầu đủ thuyết phục |
+| `SPRING_FAILED` | Giá tiếp tục giao dịch dưới hỗ trợ, không thể lấy lại TR, hoặc xuất hiện áp lực bán tiếp diễn |
+
+Spring Confirmed không đồng nghĩa với Accumulation Confirmed hay Markup Confirmed. Không gán Spring ngay tại phiên đầu tiên xuyên thủng.
+
+### Phân biệt Spring, ST và Breakdown
+
+| Tiêu chí | ST | Spring | Breakdown |
+|---|---|---|---|
+| Xuyên hỗ trợ | Không bắt buộc | Có | Có |
+| Quay lại TR | Thường vẫn ở trong TR | Có | Không hoặc thất bại |
+| Mục đích | Kiểm tra cung | Kiểm tra cung và hấp thụ | Phá vỡ cấu trúc |
+| Ý nghĩa | Thành công nếu cung suy yếu | Có khả năng rũ bỏ nguồn cung | Có thể bắt đầu Markdown |
+
+### Không nên gán Spring
+
+- Giá phá hỗ trợ với volume lớn, biên độ rộng và đóng cửa gần đáy.
+- Giá tiếp tục tạo LL trong các phiên sau.
+- Giá hồi phục nhưng không thể lấy lại vùng hỗ trợ.
+- Giá chỉ xuyên hỗ trợ một khoảng rất nhỏ do nhiễu, không có bằng chứng hấp thụ.
+- Không có Trading Range đủ rõ để xác định vùng hỗ trợ tham chiếu.
+
+Không gán Spring cho mọi phiên có low thấp hơn đáy TR nhưng close vẫn trên hỗ trợ. Cần đánh giá cả hành vi sau sự kiện.
+
+### Nguyên tắc
+
+- Hỗ trợ phải được xác định từ cấu trúc TR, không chỉ từ một mức low đơn lẻ.
+- Dùng vùng giá hỗ trợ thay vì một mức giá chính xác, đặc biệt với cổ phiếu Việt Nam.
+- Cho phép Spring xuyên thủng hơn một phiên, nhưng phải đánh giá tốc độ lấy lại vùng hỗ trợ.
+- Tách thời điểm phát hiện Candidate và thời điểm Confirmed.
+- Không bắt buộc phải có Spring trong mọi Accumulation.
+
+**Spring và Shakeout:** Spring mô tả hành động xuyên thủng hỗ trợ TR rồi quay trở lại. Shakeout là hành động rũ bỏ mạnh hơn, đôi khi trong một cấu trúc tăng hoặc tái tích lũy, không nhất thiết có hình thái Spring cổ điển. Hệ thống lưu Spring như một sự kiện cụ thể; Shakeout có thể là nhãn hành vi rộng hơn nếu sau này cần mở rộng.
+
+### Cách đo trong hệ thống
+
+Ngưỡng trong `SpringConfig` và `RevisionConfig`. Mã nguồn: `_springs` trong `wyckoff/revision.py`. Thay cho Spring kéo dài và Spring hồi phục nhanh là hai quy tắc riêng trước đây.
+
+| Yếu tố | Cách đo |
+|---|---|
+| Bối cảnh | Range đã xác nhận tối thiểu 5 phiên và còn hoạt động; hoặc đã thoát xuống mà Markdown đang bị bác bỏ, còn trong thời hạn đánh giá |
+| Xuyên hỗ trợ | Low dưới support hơn max(0,1 ATR, 1 tick), phiên trước chưa xuyên. Mức này loại nhiễu |
+| Candidate | Trong cú xuyên, có phiên close_pos >= 0,5 hoặc close từ support trở lên. Chưa có dấu hiệu này thì là breakdown thông thường, không ghi sự kiện |
+| Lấy lại hỗ trợ | Close từ support + 1 tick, trong 15 phiên tính cả phiên xuyên |
+| Phiên đặt Spring | Xuyên nhiều phiên: phiên xa range nhất, tức phiên có high thấp nhất trong các phiên xuyên, đến phiên lấy lại hỗ trợ. Phiên xuyên đầu tiên lưu ở `penetration_date`, đáy thấp nhất của cú xuyên lưu ở `lowest_low` |
+| Confirmed, một trong ba | Sau khi lấy lại: phiên demand (nến tăng, volume >= 1,5 lần TB20, close_pos >= 0,7); hoặc close cách đáy tối thiểu 2 ATR (ATR tại phiên xuyên); hoặc Test: low về sát support (trong 0,1 ATR), giữ đáy, close trong range, volume dưới 0,6 lần và biên độ hẹp hơn phiên xuyên lớn nhất |
+| Failed | Không lấy lại hỗ trợ trong 15 phiên; đáy mới sau khi đã quay lại; 15 phiên sau khi quay lại không có phản ứng; hết thời hạn của range; Markdown xác nhận; có SC mới; có range mới |
+| Bác bỏ sau xác nhận | Trong 60 phiên, close dưới đáy − 0,5 ATR; hoặc có SC xác nhận tạo sau cú xuyên |
+| Gộp | Cú xuyên mới cách cú trước dưới 10 phiên: đáy không thấp hơn thì gộp vào cú trước; đáy thấp hơn thì thay cú trước |
+| Spring Test | Lần kiểm tra đầu tiên theo tiêu chí trên, trong 15 phiên sau khi lấy lại. Spring bị bác bỏ thì Test bị bác bỏ theo |
+
+**Nhãn:** hồi phục nhanh khi lấy lại hỗ trợ trong 4 phiên, kéo dài khi lâu hơn. `volume_profile` ghi thấp hoặc cao theo mức 1 lần TB20. Hai nhãn này chỉ để mô tả, không quyết định trạng thái.
+
+### Số đo khám phá
+
+Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫu cũ, không phải kiểm định. Đã bỏ các ca gộp. Các cột cuối đo trong 60 phiên sau xác nhận. "Về sau bị bác bỏ" là tỷ lệ cuối cùng bị bác bỏ trong số đã xác nhận.
+
+| Nhóm, thật / placebo | n | Về sau bị bác bỏ (%) | Close trên resistance (%) | Mất đáy Spring (%) | Lợi suất (%) |
+|---|---|---|---|---|---|
+| Mọi Spring xác nhận | 5.200 / 5.641 | 57,7 / 59,5 | 41,5 / 53,9 | 60,9 / 62,7 | +1,6 / +2,7 |
+| Xác nhận bằng phản ứng tăng | 2.298 / 2.757 | 50,5 / 53,7 | 44,1 / 57,8 | 53,7 / 57,5 | +1,5 / +2,9 |
+| Xác nhận bằng phiên demand | 1.747 / 2.062 | 57,6 / 60,3 | 44,2 / 53,6 | 60,7 / 63,3 | +1,8 / +2,2 |
+| Xác nhận bằng Test | 1.155 / 822 | 72,2 / 77,0 | 31,9 / 42,1 | 75,8 / 78,3 | +1,5 / +3,0 |
+| Hồi phục nhanh | 4.251 / 4.318 | 59,5 / 62,7 | 41,5 / 54,6 | 62,8 / 65,4 | +1,6 / +2,5 |
+| Kéo dài | 949 / 1.323 | 49,7 / 49,1 | 41,2 / 51,7 | 52,5 / 53,7 | +1,6 / +3,3 |
+| Volume cao | 3.475 / 3.628 | 57,5 / 58,9 | 41,6 / 53,1 | 60,3 / 62,0 | +1,7 / +3,0 |
+| Volume thấp | 1.725 / 2.013 | 58,1 / 60,6 | 41,2 / 55,5 | 62,3 / 63,7 | +1,5 / +2,2 |
+
+- **Spring xác nhận chưa cho thấy lợi thế:** lợi suất thấp hơn placebo, giá thật vượt resistance ít hơn placebo, và khoảng 60% ca mất đáy Spring trong 60 phiên.
+- Spring khá phổ biến: 9.590 ứng viên trên 7.765 range (placebo 10.233 trên 8.413), 54,2% được xác nhận (placebo 55,1%). Hơn một nửa số đã xác nhận về sau bị bác bỏ.
+- Volume thấp không tốt hơn volume cao, đúng với việc không đặt volume thấp làm điều kiện.
+- Lý do Failed phổ biến nhất khi chưa xác nhận: đáy mới sau khi quay lại (2.480 / 2.500), không lấy lại hỗ trợ trong 15 phiên (1.310 / 1.485).
+- So mức thời hạn lấy lại hỗ trợ: 5, 10, 15, 30 phiên xác nhận 47,1%, 51,6%, 54,2%, 57,5% (placebo 45,9%, 51,9%, 55,1%, 58,7%), lợi suất khoảng +1,6%. Không khác biệt, nên 15 phiên được chọn theo mô tả "nhanh chóng", không phải vì kết quả tốt hơn.
+- 74,1% Spring của nhật ký trùng phiên với Spring mới (placebo 77,6%). Con số này giảm vì Spring mới đặt tại phiên có high thấp nhất, nên không đo được độ khớp của hai định nghĩa.
+
+### Phạm vi
+
+Định nghĩa này áp dụng cho dashboard qua lớp đánh giá lại. Nhật ký, điểm tin cậy, backtest và cảnh báo Spring xuyên sâu vẫn dùng `detect_spring`. Mốc pha C trên biểu đồ hồi cứu bắt đầu từ phiên đặt Spring.
+
+### Giới hạn
+
+- Các ngưỡng từ chối giá thấp, 15 phiên, 2 ATR là diễn giải định lượng do Claude đề xuất; cần được rà soát cùng người dùng.
+- Bối cảnh "thường trong Accumulation hoặc Re-accumulation" chưa dùng để lọc, vì mức Accumulation dùng chính Spring làm bằng chứng. Spring trong range nghiêng về Distribution vẫn được ghi.
+- Hỗ trợ là một mức theo range với dung sai xuyên thủng và tick, chưa phải một vùng giá đầy đủ.
+- Chưa có nhãn Shakeout riêng.
 
 ---
 

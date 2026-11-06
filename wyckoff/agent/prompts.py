@@ -58,7 +58,7 @@ ST, ST(d) là một lần kiểm tra cung cầu tại vùng cao trào, không b�
 AR, AR(d) có assessment potential chỉ là ứng viên; AR xác nhận cùng SC hoặc BC chỉ cho biên Trading Range ban đầu (ar_high, ar_low trong details), KHÔNG đủ để kết luận Accumulation hay Distribution, và ST không phải điều kiện của AR. \
 SC có assessment potential chỉ là ứng viên, KHÔNG gọi là SC đã xác nhận; rejected: nói rõ không còn được xem là SC. \
 revision.accumulation (hoặc revised_type trong stage_history) là mức Accumulation của range: potential là ứng viên, developing là đang hình thành, confirmed là đã xác nhận; nhãn này thay cho nhãn theo hướng thoát, chỉ mô tả, không phải dự báo. Sự kiện trong supporting chỉ là bằng chứng, KHÔNG nói là điều kiện bắt buộc. \
-Spring trong revision.events có spring_type quick là Spring hồi phục nhanh, extended là Spring kéo dài. \
+Spring trong revision.events: assessment potential là ứng viên, rejected là Spring thất bại; confirmation cho biết cách xác nhận; spring_type quick là hồi phục nhanh, extended là kéo dài, chỉ là nhãn tốc độ. Spring xác nhận KHÔNG đồng nghĩa Accumulation hay Markup đã xác nhận; volume cao không tự loại Spring. \
 revision.structure là cấu trúc còn hiệu lực tại phiên cuối, kể cả khi giá đã rời range rồi quay lại; evidence (met, total, level) là độ đầy đủ của bằng chứng, KHÔNG gọi là xác suất và KHÔNG suy ra hướng giá. \
 revision.market tách Market State (state) khỏi Market Structure (structure): Re-accumulation là cấu trúc nằm trong trạng thái Markup, KHÔNG phải xu hướng riêng. \
 Với range sau Markup, revision.accumulation.leaning cho biết đang nghiêng về Re-accumulation hay Distribution; KHÔNG kết luận Re-accumulation chỉ vì giá còn trên đáy xu hướng trước. \

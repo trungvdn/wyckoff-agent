@@ -144,9 +144,7 @@ Ngưỡng trong `RevisionConfig`, mã nguồn `_range_verdicts` trong `wyckoff/r
 
 **Trên biểu đồ hồi cứu:** Confirmed và Developing phủ một đoạn liền từ đầu range đến trước Markup. Range không đạt hoặc bị bác bỏ hiện `TR ?`. Thẻ giai đoạn liệt kê từng bằng chứng "Đạt" hoặc "Chưa", kèm sự kiện làm bằng chứng.
 
-**Spring trong Accumulation:** range thoát xuống rồi quay lại trên support với demand trong 30 phiên kể từ phiên thoát đầu tiên, khi Markdown chưa xác nhận và chưa có SC xác nhận tạo sau cú thủng, được tính là Spring kéo dài. Có SC mới thì giá đã sang cấu trúc mới. Biểu đồ hồi cứu vẽ từ phiên Spring đến trước SOS là pha C.
-
-**Spring hồi phục nhanh:** range đã thoát xuống, Markdown đang bị bác bỏ, chưa có range mới và còn trong thời hạn đánh giá. Low lại thủng support (phiên trước chưa thủng), rồi trong 4 phiên tính cả phiên thủng có close từ support + 1 tick với demand (nến tăng, volume từ 1,5 lần TB20, close_pos từ 0,7). Không cần Test vì phiên hồi đã có demand. Không có demand thì không phải Spring. Bác bỏ khi close dưới đáy cú thủng − 0,5 ATR, hoặc có SC xác nhận tạo sau cú thủng. Bộ nhận diện Spring của nhật ký không xét trường hợp này vì range đã kết thúc. Số đo: `docs/revision-rules.md`.
+**Spring trong Accumulation:** định nghĩa đầy đủ ở `docs/event-definitions.md`. Spring được xét cả khi range đã thoát xuống mà Markdown đang bị bác bỏ. Có SC mới thì giá đã sang cấu trúc mới. Biểu đồ hồi cứu vẽ từ phiên Spring sớm nhất liên quan đến cú thoát đến trước SOS là pha C.
 
 **Khung range trên biểu đồ:** range đã thoát nhưng vẫn là cấu trúc hiện tại (không có xu hướng nào còn đứng, còn trong thời hạn đánh giá) thì khung kéo đến phiên cuối. Biên support và resistance giữ nguyên. Nhật ký vẫn ghi range đã kết thúc tại phiên thoát.
 
@@ -164,7 +162,7 @@ Pha A đến E là pha của Accumulation, nên chỉ range đang ở mức Cand
 
 Nhật ký tại từng thời điểm (`result.phases`), điểm tin cậy và mức xác nhận, vô hiệu trên dashboard vẫn theo máy trạng thái cũ.
 
-**Số đo khám phá (cache H8, 311 mã, từ 2018):** 43,6% số phiên không có pha nào (placebo 43,9%). Trong 1.762 range còn là Accumulation hoặc Re-accumulation đến cuối (placebo 1.886), 13,6% có pha C (17,5%), 77,5% có pha D (62,7%), 83,5% có pha E (90,5%). Trong các range có pha D, 70% có mốc D không đến từ SOS (950 so với 416). Các tỷ lệ này được tính sau khi đã biết nhãn cuối, nên chỉ mô tả cơ cấu, không đo khả năng dự báo.
+**Số đo khám phá (cache H8, 311 mã, từ 2018):** 42,8% số phiên không có pha nào (placebo 43,1%). Trong 1.763 range còn là Accumulation hoặc Re-accumulation đến cuối (placebo 1.888), 16,4% có pha C (20,1%), 77,5% có pha D (62,7%), 83,5% có pha E (90,5%). Trong các range có pha D, 70% có mốc D không đến từ SOS (950 so với 417). Các tỷ lệ này được tính sau khi đã biết nhãn cuối, nên chỉ mô tả cơ cấu, không đo khả năng dự báo.
 
 ### Hiển thị cấu trúc và mức bằng chứng
 
@@ -178,11 +176,11 @@ Quy tắc áp dụng cả khi giá đã rời range mà không còn xu hướng 
 
 | Accumulation, mức bằng chứng | Số trường hợp, thật / placebo | Sau đó Confirmed, thật / placebo | Lợi suất 60 phiên, thật / placebo |
 |---|---|---|---|
-| Thấp | 2.973 / 3.794 | 21,4% / 21,5% | +1,5% / +3,0% |
-| Trung bình | 3.323 / 4.384 | 40,9% / 38,5% | +1,6% / +3,0% |
-| Cao | 942 / 1.602 | 74,4% / 66,4% | +4,0% / +2,7% |
+| Thấp | 2.956 / 3.791 | 21,5% / 21,5% | +1,5% / +3,1% |
+| Trung bình | 3.321 / 4.383 | 41,1% / 38,5% | +1,6% / +3,0% |
+| Cao | 947 / 1.602 | 74,2% / 66,4% | +3,9% / +2,7% |
 
-Tỷ lệ Confirmed tăng theo mức ở cả hai bên, nên phần lớn là cơ học: Confirmed dùng chính các điều kiện này. Lợi suất không tăng đều theo mức. Riêng range đã thoát xuống rồi quay lại, Confirmed vẫn hiếm ở mức trung bình: 8,5% (n = 259), placebo 8,4%. Trước khi đổi cách tính thời hạn, hai số này là 6,1% (n = 197) và 3,1%: thời hạn dài hơn cho thêm cơ hội xác nhận ở cả hai bên, nhưng không tạo được khác biệt với placebo.
+Tỷ lệ Confirmed tăng theo mức ở cả hai bên, nên phần lớn là cơ học: Confirmed dùng chính các điều kiện này. Lợi suất không tăng đều theo mức. Riêng range đã thoát xuống rồi quay lại, Confirmed vẫn hiếm ở mức trung bình: 7,7% (n = 260), placebo 8,4%. Trước khi đổi cách tính thời hạn, hai số này là 6,1% (n = 197) và 3,1%: thời hạn dài hơn cho thêm cơ hội xác nhận ở cả hai bên, nhưng không tạo được khác biệt với placebo.
 
 ### Số đo khám phá của Accumulation
 
@@ -193,10 +191,10 @@ Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫ
 | Từng là Candidate | 36,9% | 38,7% |
 | Từng là Developing | 25,7% | 31,2% |
 | Từng là Confirmed | 16,2% | 16,2% |
-| Giữ Confirmed đến cuối (trong số Confirmed) | 65,6% | 72,0% |
+| Giữ Confirmed đến cuối (trong số Confirmed) | 65,7% | 72,0% |
 | Close thủng support trong 60 phiên sau Confirmed | 24,9% | 22,9% |
 | Lợi suất 60 phiên sau Confirmed | +3,3% | +3,3% |
-| Range từng Developing thoát lên | 50,1% | 55,9% |
+| Range từng Developing thoát lên | 50,5% | 55,9% |
 | Mọi range thoát lên | 52,8% | 53,5% |
 
 Các tỷ lệ gần như bằng placebo, nên định nghĩa này mô tả hành vi của quy tắc, chưa phân biệt được thị trường thật với dữ liệu xáo trộn, và Developing chưa cho thông tin về hướng thoát. Nhóm Confirmed có LPS cho lợi suất +11,7% (n = 89), nhưng placebo cũng +12,1% (n = 56), nên đó chủ yếu là hiệu ứng cơ học.
@@ -497,7 +495,7 @@ Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫ
 | Từng Confirmed | 883 (39,7%) | 1.051 (39,5%) |
 | Lợi suất 60 phiên sau Confirmed | +3,0% | +3,5% |
 | Đại diện là Distribution | 782 | 808 |
-| Đại diện là Re-accumulation | 798 | 840 |
+| Đại diện là Re-accumulation | 798 | 842 |
 
 Lợi suất sau Confirmed vẫn dương và không thấp hơn placebo một cách rõ ràng, nên nhãn này chưa cho thấy giá giảm tiếp. Sau khi dùng chung điều kiện "Markup trước đó", số range đại diện của hai bên đã cân bằng (trước đó là 1.172 so với 105). Cấu trúc đại diện khớp với hướng thoát khoảng 99% trên cả dữ liệu thật và placebo, vì mức Confirmed của hai bên dựa vào chính hướng thoát: đây là phân loại sau khi đã biết kết quả, không phải dự báo.
 

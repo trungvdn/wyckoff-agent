@@ -277,7 +277,9 @@ class RevisionConfig:
     demand_min_close_pos: float = 0.7
     # Spring kéo dài: thoát xuống rồi quay lại với demand
     spring_window: int = 30           # tối đa 30 phiên sau phiên xác nhận thoát
-    spring_quick_bars: int = 4        # Spring hồi phục nhanh: hồi với demand trong 4 phiên, tính cả phiên thủng
+    spring_quick_bars: int = 4        # nhãn Spring hồi phục nhanh: lấy lại hỗ trợ trong 4 phiên, tính cả phiên thủng; lâu hơn là kéo dài
+    spring_max_bars: int = 15         # Spring (docs/event-definitions.md): phải lấy lại hỗ trợ trong 15 phiên, tính cả phiên thủng
+    spring_reaction_atr: float = 2.0  # xác nhận bằng phản ứng: close cách đáy Spring tối thiểu 2 ATR
     # AR (docs/event-definitions.md): cửa sổ và pivot theo ar.window, ar.pivot_bars; phía BC theo distribution
     ar_min_spread_atr: float = 1.0    # phiên phản ứng: biên độ (True Range) từ 1 ATR
     ar_min_close_pos: float = 0.5     # phiên phản ứng: đóng cửa ở nửa thuận chiều của phiên

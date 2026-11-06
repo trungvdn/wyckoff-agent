@@ -262,6 +262,21 @@ def test_st_events_follow_parent_rejection() -> None:
     assert st2.history[-1].status == EventStatus.INVALIDATED
 
 
+def test_multi_bar_spring_marked_at_session_with_lowest_high() -> None:
+    res, found = _dip([19.8, 19.6, 19.3, 19.7, 20.4, 20.5], overrides={4: 3.0})
+    e = found[0]
+    assert e.details["recovery_bars"] == 5 and e.idx == len(_DIP_HEAD) + 2     # high thấp nhất, không phải phiên xuyên đầu tiên
+    assert e.details["penetration_date"] == f"{res.df.index[len(_DIP_HEAD)]:%Y-%m-%d}"
+    assert e.details["lowest_low"] == res.df["low"].iloc[len(_DIP_HEAD):len(_DIP_HEAD) + 5].min()
+
+
+def test_spring_test_follows_spring_rejection() -> None:
+    res, found = _dip([19.7, 19.7, 19.7, 20.1, 20.0, 20.0, 20.1, 18.0, 17.5, 17.0], overrides={0: 3.0})
+    assert res.revision.status_of(found[0]) == REJECTED
+    t = next(x for x in res.revision.events if x.kind == EventType.TEST and x.details.get("spring_date") == f"{found[0].date:%Y-%m-%d}")
+    assert res.revision.status_of(t) == REJECTED
+
+
 def _second_dip(recover_at: int, volume_mult: float = 3.0) -> pd.DataFrame:
     """Thoát xuống, quay lại range, low lại thủng support 20 và hồi ở phiên thứ `recover_at`, tính cả phiên thủng."""
     head = _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 20.5, 20.6, 20.7, 20.6, 20.5, 20.6]
@@ -284,9 +299,50 @@ def test_quick_spring_confirmed_on_recovery_with_demand() -> None:
     assert res.revision.assessments[e.event_id][0].status == POTENTIAL
 
 
-def test_quick_spring_needs_recovery_in_time_and_demand() -> None:
-    assert not _quick(analyze(_second_dip(5), _cfg()))              # quá 4 phiên
-    assert not _quick(analyze(_second_dip(4, volume_mult=1.0), _cfg()))   # không có demand
+def test_spring_speed_label_follows_bars_to_reclaim() -> None:
+    assert not _quick(analyze(_second_dip(5), _cfg()))              # quá 4 phiên: nhãn kéo dài
+    late = [e for e in analyze(_second_dip(5), _cfg()).revision.events if e.kind == EventType.SPRING and e.details["spring_type"] == "extended"]
+    assert late and late[-1].details["recovery_bars"] == 5
+
+
+_DIP_HEAD = _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 20.5, 20.6, 20.7, 20.6, 20.5, 20.6]
+
+
+def _dip(after: list[float], overrides: dict[int, float] | None = None):
+    """Cú xuyên support 20 sau khi range đã thoát rồi quay lại; `overrides`: vị trí trong `after` -> bội số volume."""
+    frame = _frame(_DIP_HEAD + after, overrides={len(_DIP_HEAD) + i: m for i, m in (overrides or {}).items()})
+    res = analyze(frame, _cfg())
+    b = len(_DIP_HEAD)
+    return res, [e for e in res.revision.events + res.revision.candidates if e.kind == EventType.SPRING and e.idx >= b]
+
+
+def test_spring_fails_without_demand_reaction_after_reclaim() -> None:
+    _, found = _dip([19.7, 19.7, 19.7] + [20.1] * 18)
+    assert len(found) == 1 and "không có phản ứng cầu" in found[0].history[-1].reason
+
+
+def test_spring_candidate_stays_open_until_reaction() -> None:
+    res, found = _dip([19.7, 19.7, 19.7, 20.1])
+    assert len(found) == 1 and res.revision.status_of(found[0]) == POTENTIAL
+
+
+def test_spring_fails_when_support_not_reclaimed_or_new_low() -> None:
+    _, found = _dip([19.7] * 16)
+    assert found and found[0].history[-1].status == EventStatus.INVALIDATED
+    _, found = _dip([19.7, 19.7, 19.7, 20.1, 19.0, 19.0])
+    assert found and "đáy mới" in found[0].history[-1].reason
+
+
+def test_plain_breakdown_is_not_spring() -> None:
+    _, found = _dip([19.6, 19.2, 18.8, 18.4, 18.0, 17.6, 17.2])    # đóng cửa gần đáy liên tục, không từ chối giá thấp
+    assert not found
+
+
+def test_high_volume_spring_is_valid_and_confirmed_by_test() -> None:
+    res, found = _dip([19.7, 19.7, 19.7, 20.1, 20.0, 20.0], overrides={0: 3.0})
+    e = found[0]
+    assert res.revision.status_of(e) == CONFIRMED and e.details["volume_profile"] == "cao" and e.details["confirmation"].startswith("Test")
+    assert [t for t in res.revision.events if t.kind == EventType.TEST and t.details.get("spring_date") == f"{e.date:%Y-%m-%d}"]
 
 
 def test_quick_spring_rejected_when_close_breaks_low() -> None:
@@ -419,10 +475,9 @@ def test_extended_spring_needs_demand_and_confirms_at_recovery() -> None:
     springs = [e for e in res.revision.events if e.details.get("spring_type") == "extended"]
     assert len(springs) == 1
     sp = springs[0]
-    assert sp.kind == EventType.SPRING and sp.confirmed_idx == recovery and sp.idx < n + 3
-    assert sp.details["breakdown"] in ("yếu", "mạnh")
+    assert sp.kind == EventType.SPRING and sp.confirmed_idx == recovery and sp.idx == n + 3    # phiên có high thấp nhất
     assert res.revision.status_of(sp) == CONFIRMED
-    assert sp.event_id.endswith("-EXT")
+    assert sp.event_id.endswith("-V2")
     # Biểu đồ hồi cứu: không còn vô hiệu do thoát xuống, về pha C từ phiên hồi
     ph = res.revision.phase_series["phase"]
     assert ph.iloc[recovery] == "C" and ph.iloc[recovery - 1] == "C" and ph.iloc[sp.idx] == "C"
@@ -430,12 +485,11 @@ def test_extended_spring_needs_demand_and_confirms_at_recovery() -> None:
     assert res.phases.series["phase"].iloc[recovery] == "invalid"   # nhật ký giữ nguyên
 
 
-def test_no_extended_spring_without_demand() -> None:
+def test_spring_confirmed_by_strong_reaction_without_demand_bar() -> None:
     closes = _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 19.3, 20.8, 21.0, 21.1, 21.0, 21.1, 21.0, 21.1]
-    res = analyze(_frame(closes), _cfg())   # volume đều: không có phiên demand
-    assert not [e for e in res.revision.events if e.details.get("spring_type") == "extended"]
-    assert [e for e in res.revision.candidates if e.details.get("spring_type") == "extended"]
-    assert (res.revision.phase_series["phase"] == "potential").any()   # không có Spring: vùng vẫn là chờ
+    res = analyze(_frame(closes), _cfg())   # volume đều: không có phiên demand, nhưng giá phản ứng mạnh
+    sp = [e for e in res.revision.events if e.details.get("spring_type") == "extended"]
+    assert sp and "phản ứng tăng" in sp[0].details["confirmation"]
 
 
 def _phases(res) -> list[str]:
