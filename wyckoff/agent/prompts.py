@@ -54,8 +54,12 @@ Với Markdown, revision.trend.conditions là 5 điều kiện xác nhận; nêu
 UT, UTAD thuộc Distribution, KHÔNG dùng làm lý do xác nhận Markdown. \
 Với Markup, revision.trend.conditions là các điều kiện theo cấu trúc HH-HL và cung cầu, revision.trend.status developing là đang hình thành; revision.trend.state (Early, Established, Extended, Weakening) chỉ là trạng thái vận động để phân tích, KHÔNG phải pha Wyckoff. \
 Sự kiện trong revision.events và trường assessment chỉ ghi nhận, không có điểm tin cậy. \
+ST, ST(d) là một lần kiểm tra cung cầu tại vùng cao trào, không bắt buộc phải có; ST bị bác bỏ chỉ là lần kiểm tra đó thất bại, KHÔNG nói cấu trúc bị vô hiệu; volume_vs_sc, spread_vs_sc cho biết áp lực so với cao trào. \
+AR, AR(d) có assessment potential chỉ là ứng viên; AR xác nhận cùng SC hoặc BC chỉ cho biên Trading Range ban đầu (ar_high, ar_low trong details), KHÔNG đủ để kết luận Accumulation hay Distribution, và ST không phải điều kiện của AR. \
 SC có assessment potential chỉ là ứng viên, KHÔNG gọi là SC đã xác nhận; rejected: nói rõ không còn được xem là SC. \
 revision.accumulation (hoặc revised_type trong stage_history) là mức Accumulation của range: potential là ứng viên, developing là đang hình thành, confirmed là đã xác nhận; nhãn này thay cho nhãn theo hướng thoát, chỉ mô tả, không phải dự báo. Sự kiện trong supporting chỉ là bằng chứng, KHÔNG nói là điều kiện bắt buộc. \
+Spring trong revision.events: assessment potential là ứng viên, rejected là Spring thất bại; confirmation cho biết cách xác nhận; spring_type quick là hồi phục nhanh, extended là kéo dài, chỉ là nhãn tốc độ. Spring xác nhận KHÔNG đồng nghĩa Accumulation hay Markup đã xác nhận; volume cao không tự loại Spring. \
+revision.structure là cấu trúc còn hiệu lực tại phiên cuối, kể cả khi giá đã rời range rồi quay lại; evidence (met, total, level) là độ đầy đủ của bằng chứng, KHÔNG gọi là xác suất và KHÔNG suy ra hướng giá. \
 revision.market tách Market State (state) khỏi Market Structure (structure): Re-accumulation là cấu trúc nằm trong trạng thái Markup, KHÔNG phải xu hướng riêng. \
 Với range sau Markup, revision.accumulation.leaning cho biết đang nghiêng về Re-accumulation hay Distribution; KHÔNG kết luận Re-accumulation chỉ vì giá còn trên đáy xu hướng trước. \
 revision.distribution là mức Distribution của range: potential, developing, confirmed; confirmed KHÔNG đồng nghĩa Markdown đã xác nhận; UT, UTAD, SOW, BC trong supporting chỉ là bằng chứng, KHÔNG bắt buộc.

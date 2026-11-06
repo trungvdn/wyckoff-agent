@@ -42,6 +42,7 @@ Markdown được xác nhận khi có phá vỡ hỗ trợ có ý nghĩa, cấu 
 
 **Bác bỏ:**
 - Trước xác nhận: close quay lại trên support của range (hoặc qua lại SMA50 lúc vào xu hướng).
+- **Mở lại:** Markdown từ range đã bị bác bỏ theo cách trên được mở lại về tiềm năng khi giá thủng lần nữa theo đúng tiêu chí thoát range (close dưới support hơn 0,5 ATR trong 3 phiên liên tiếp), và các điều kiện được đo lại từ cú thủng này. Mở lại và bác bỏ có thể lặp nhiều lần, cho đến khi xu hướng trong nhật ký kết thúc.
 - Sau xác nhận, trong 60 phiên: close vượt resistance của range hoặc có SOS reclaim. Quay lại support chỉ là cảnh báo, vì hồi lên kiểm tra support cũ là bình thường (LPSY).
 
 **Sự kiện:**
@@ -125,7 +126,7 @@ Ngưỡng trong `RevisionConfig`, mã nguồn `_range_verdicts` trong `wyckoff/r
 |---|---|
 | Có Markdown trước đó | Close đầu range thấp hơn close cao nhất 120 phiên trước từ 15%, và một trong: xu hướng trước range là Markdown, SMA50 đang giảm, có SC xác nhận gần đầu range |
 | Áp lực bán suy yếu | Phiên giảm gần đây có volume hoặc biên độ không cao hơn đoạn 20 phiên trước range; 10 phiên gần nhất không close dưới support − 0,5 ATR |
-| TR được duy trì | Range còn hoạt động; hoặc đã thoát lên; hoặc thoát xuống nhưng Markdown bị bác bỏ |
+| TR được duy trì | Range còn hoạt động; hoặc đã thoát lên; hoặc thoát xuống nhưng Markdown đang bị bác bỏ. Markdown được mở lại thì điều kiện này không còn đạt |
 | Hấp thụ cung | Có phiên volume >= 1,5 lần ở nửa dưới range, với close_pos >= 0,5 hoặc giá chỉ đổi dưới 0,5 ATR; hoặc có SC, ST, Spring, Test đã xác nhận làm bằng chứng |
 | Cầu gia tăng | Phiên tăng gần đây có volume và biên độ không thấp hơn phiên giảm |
 | Cầu chiếm ưu thế | Volume phiên tăng gần đây cao hơn phiên giảm; rất ít phiên giảm cũng được tính |
@@ -134,14 +135,18 @@ Ngưỡng trong `RevisionConfig`, mã nguồn `_range_verdicts` trong `wyckoff/r
 | HH–HL | Close sau breakout vượt resistance (HH); đáy swing sau breakout cao hơn đáy trước đó (HL). Chưa có đáy swing thì dùng LPS, hoặc việc đã giữ trên hỗ trợ đủ lâu |
 
 **Bác bỏ:**
-- Trước khi Confirmed: Markdown của range được xác nhận; thoát xuống và không quay lại trong 30 phiên; hoặc range mới đã xác nhận.
+- Trước khi Confirmed: Markdown của range được xác nhận; đã thoát xuống và 30 phiên không close trong range mà giá đang dưới support; hoặc range mới đã xác nhận.
 - Sau khi Confirmed, trong 60 phiên: SOS làm căn cứ bị bác bỏ, hoặc close thủng đáy Spring còn hiệu lực (không có Spring thì thủng support). Một LPS thất bại không gỡ nhãn.
+
+**Thời hạn đánh giá sau khi thoát xuống:** 30 phiên kể từ phiên thoát hoặc phiên cuối close còn trong range (giữa support và resistance), tùy phiên nào muộn hơn. Giá còn trong range thì range còn được đánh giá. Close trên resistance không kéo dài thời hạn. Quy tắc này dùng chung cho Accumulation, Re-accumulation và Distribution.
 
 **Nhãn:** Initial Accumulation khi trước range là Markdown theo nhật ký, Accumulation khi bối cảnh giảm đến từ SMA50 hoặc SC. Range sau Markup đã rõ được xét là Re-accumulation (mục riêng bên dưới).
 
 **Trên biểu đồ hồi cứu:** Confirmed và Developing phủ một đoạn liền từ đầu range đến trước Markup. Range không đạt hoặc bị bác bỏ hiện `TR ?`. Thẻ giai đoạn liệt kê từng bằng chứng "Đạt" hoặc "Chưa", kèm sự kiện làm bằng chứng.
 
-**Spring trong Accumulation:** range thoát xuống rồi quay lại trên support với demand trong 30 phiên, khi Markdown chưa xác nhận và chưa có SC xác nhận tạo sau cú thủng, được tính là Spring kéo dài. Có SC mới thì giá đã sang cấu trúc mới. Biểu đồ hồi cứu vẽ từ phiên Spring đến trước SOS là pha C.
+**Spring trong Accumulation:** định nghĩa đầy đủ ở `docs/event-definitions.md`. Spring được xét cả khi range đã thoát xuống mà Markdown đang bị bác bỏ. Có SC mới thì giá đã sang cấu trúc mới. Biểu đồ hồi cứu vẽ từ phiên Spring sớm nhất liên quan đến cú thoát đến trước SOS là pha C.
+
+**Khung range trên biểu đồ:** range đã thoát nhưng vẫn là cấu trúc hiện tại (không có xu hướng nào còn đứng, còn trong thời hạn đánh giá) thì khung kéo đến phiên cuối. Biên support và resistance giữ nguyên. Nhật ký vẫn ghi range đã kết thúc tại phiên thoát.
 
 ### Dải pha trên biểu đồ
 
@@ -157,7 +162,25 @@ Pha A đến E là pha của Accumulation, nên chỉ range đang ở mức Cand
 
 Nhật ký tại từng thời điểm (`result.phases`), điểm tin cậy và mức xác nhận, vô hiệu trên dashboard vẫn theo máy trạng thái cũ.
 
-**Số đo khám phá (cache H8, 311 mã, từ 2018):** khoảng 60% số phiên không có pha nào (placebo cũng khoảng 60%). Trong 979 range còn là Accumulation đến cuối (placebo 1.040), 14,5% có pha C (17,0%), 73,9% có pha D (61,6%), 85,5% có pha E (93,8%). Trong các range có pha D, 73% có mốc D không đến từ SOS (528 so với 195). Các tỷ lệ này được tính sau khi đã biết nhãn cuối, nên chỉ mô tả cơ cấu, không đo khả năng dự báo.
+**Số đo khám phá (cache H8, 311 mã, từ 2018):** 42,8% số phiên không có pha nào (placebo 43,1%). Trong 1.763 range còn là Accumulation hoặc Re-accumulation đến cuối (placebo 1.888), 16,4% có pha C (20,1%), 77,5% có pha D (62,7%), 83,5% có pha E (90,5%). Trong các range có pha D, 70% có mốc D không đến từ SOS (950 so với 417). Các tỷ lệ này được tính sau khi đã biết nhãn cuối, nên chỉ mô tả cơ cấu, không đo khả năng dự báo.
+
+### Hiển thị cấu trúc và mức bằng chứng
+
+Thẻ giai đoạn gọi tên theo cấu trúc đại diện của range khi cấu trúc đó đã phân định và ở mức Developing hoặc Confirmed: `Accumulation đang hình thành`, `Re-accumulation đang hình thành`, `Distribution đang hình thành`, hoặc tên đầy đủ khi Confirmed. Candidate vẫn hiện các giả thuyết như cũ.
+
+Quy tắc áp dụng cả khi giá đã rời range mà không còn xu hướng nào đứng, ví dụ thoát xuống rồi quay lại và Markdown bị bác bỏ. Khi đó Market State là trạng thái của cấu trúc, và đoạn trên dải giai đoạn kéo đến phiên cuối. Xu hướng còn đứng thì giai đoạn là xu hướng đó. Hết thời gian đánh giá (30 phiên không close trong range sau khi thoát xuống, 60 phiên sau khi thoát lên hoặc sau Confirmed) thì bằng chứng ngừng cập nhật, thẻ không còn gọi là cấu trúc hiện tại.
+
+**Mức bằng chứng** là tỷ lệ điều kiện đang đạt: thấp dưới 50%, trung bình từ 50%, cao từ 70%. Đây là độ đầy đủ của bằng chứng, không phải xác suất. Thẻ không hiện phần trăm xác suất, vì số đo dưới đây không phân biệt được với dữ liệu xáo trộn.
+
+Đo tại thời điểm trên cache H8, 311 mã, từ 2018. Mỗi range tính một lần cho mỗi số bằng chứng khi đang Developing; bỏ các trường hợp chưa có kết cục. Đây là khám phá trên mẫu cũ, không phải kiểm định.
+
+| Accumulation, mức bằng chứng | Số trường hợp, thật / placebo | Sau đó Confirmed, thật / placebo | Lợi suất 60 phiên, thật / placebo |
+|---|---|---|---|
+| Thấp | 2.956 / 3.791 | 21,5% / 21,5% | +1,5% / +3,1% |
+| Trung bình | 3.321 / 4.383 | 41,1% / 38,5% | +1,6% / +3,0% |
+| Cao | 947 / 1.602 | 74,2% / 66,4% | +3,9% / +2,7% |
+
+Tỷ lệ Confirmed tăng theo mức ở cả hai bên, nên phần lớn là cơ học: Confirmed dùng chính các điều kiện này. Lợi suất không tăng đều theo mức. Riêng range đã thoát xuống rồi quay lại, Confirmed vẫn hiếm ở mức trung bình: 7,7% (n = 260), placebo 8,4%. Trước khi đổi cách tính thời hạn, hai số này là 6,1% (n = 197) và 3,1%: thời hạn dài hơn cho thêm cơ hội xác nhận ở cả hai bên, nhưng không tạo được khác biệt với placebo.
 
 ### Số đo khám phá của Accumulation
 
@@ -165,16 +188,16 @@ Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫ
 
 | Chỉ số | Thật (7.765 range) | Placebo (8.413 range) |
 |---|---|---|
-| Từng là Candidate | 37,9% | 39,3% |
-| Từng là Developing | 26,1% | 31,2% |
-| Từng là Confirmed | 16,5% | 16,1% |
-| Giữ Confirmed đến cuối (trong số Confirmed) | 65,9% | 72,4% |
-| Close thủng support trong 60 phiên sau Confirmed | 24,4% | 21,9% |
-| Lợi suất 60 phiên sau Confirmed | +3,7% | +3,4% |
-| Range từng Developing thoát lên | 51,0% | 56,8% |
+| Từng là Candidate | 36,9% | 38,7% |
+| Từng là Developing | 25,7% | 31,2% |
+| Từng là Confirmed | 16,2% | 16,2% |
+| Giữ Confirmed đến cuối (trong số Confirmed) | 65,7% | 72,0% |
+| Close thủng support trong 60 phiên sau Confirmed | 24,9% | 22,9% |
+| Lợi suất 60 phiên sau Confirmed | +3,3% | +3,3% |
+| Range từng Developing thoát lên | 50,5% | 55,9% |
 | Mọi range thoát lên | 52,8% | 53,5% |
 
-Các tỷ lệ gần như bằng placebo, nên định nghĩa này mô tả hành vi của quy tắc, chưa phân biệt được thị trường thật với dữ liệu xáo trộn, và Developing chưa cho thông tin về hướng thoát. Nhóm Confirmed có LPS cho lợi suất +11,9% (n = 95), nhưng placebo cũng +12,0% (n = 55), nên đó chủ yếu là hiệu ứng cơ học.
+Các tỷ lệ gần như bằng placebo, nên định nghĩa này mô tả hành vi của quy tắc, chưa phân biệt được thị trường thật với dữ liệu xáo trộn, và Developing chưa cho thông tin về hướng thoát. Nhóm Confirmed có LPS cho lợi suất +11,7% (n = 89), nhưng placebo cũng +12,1% (n = 56), nên đó chủ yếu là hiệu ứng cơ học.
 
 ## Markup
 
@@ -252,7 +275,7 @@ Ngưỡng trong `RevisionConfig`, mã nguồn `_MarkupTest` trong `wyckoff/revis
 | Cầu mở rộng | Phiên tăng gần đây có volume và biên độ không thấp hơn phiên giảm; rất ít phiên giảm cũng được tính |
 | Phá đỉnh cấu trúc | Close vượt đỉnh swing gần nhất trước breakout |
 | Breakout được duy trì | Từ breakout đến nay, close không sâu quá 3% dưới resistance |
-| HH–HL | Tính từ pivot mới nhất ngược lại: tối thiểu 1 đỉnh và 1 đáy cao dần liên tiếp sau breakout |
+| HH–HL | Pivot theo close, 3 phiên mỗi bên (`mk_pivot_bars`), ngắn hơn pivot của biên range để không bỏ sót nhịp điều chỉnh ngắn khi giá tăng theo bậc thang. Tính từ pivot mới nhất ngược lại: tối thiểu 1 đỉnh và 1 đáy cao dần liên tiếp sau breakout |
 | Điều chỉnh yếu về cung | Phiên giảm gần đây có volume và biên độ không cao hơn phiên tăng |
 | HH–HL qua nhiều nhịp | Tối thiểu 2 đỉnh và 2 đáy cao dần liên tiếp |
 | Giữ hỗ trợ cấu trúc | Close không dưới đáy swing gần nhất sau breakout, và không sâu quá 3% dưới resistance |
@@ -270,13 +293,17 @@ Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫ
 
 | Chỉ số, Markup từ range | Thật (4.131) | Placebo (4.572) |
 |---|---|---|
-| Từng Developing | 54,3% | 47,9% |
-| Từng Confirmed | 13,3% | 14,2% |
-| Độ trễ xác nhận trung vị | 37 phiên | 36 phiên |
-| Lợi suất 60 phiên sau Confirmed | +7,2% | +3,8% |
-| Close dưới resistance trong 60 phiên sau Confirmed | 19,3% | 22,6% |
+| Từng Developing | 65,8% | 58,5% |
+| Từng Confirmed | 27,7% | 26,3% |
+| Độ trễ xác nhận trung vị | 22 phiên | 22 phiên |
+| Lợi suất 60 phiên sau Confirmed | +7,1% | +3,8% |
+| Close dưới resistance trong 60 phiên sau Confirmed | 29,9% | 34,1% |
 
-Quy tắc trước đó (10 phiên + 3 ATR) xác nhận 55,1% với lợi suất 60 phiên +7,1% (placebo 57,9%, +3,7%). Định nghĩa này chọn lọc hơn nhiều nhưng lợi suất gần như không đổi, và tỷ lệ xác nhận gần bằng placebo. Một xu hướng tăng thẳng, không có nhịp điều chỉnh, không tạo được đỉnh và đáy swing nên chỉ dừng ở tiềm năng.
+Quy tắc trước đó (10 phiên + 3 ATR) xác nhận 55,1% với lợi suất 60 phiên +7,1% (placebo 57,9%, +3,7%). Định nghĩa này chọn lọc hơn nhiều nhưng lợi suất gần như không đổi, và tỷ lệ xác nhận gần bằng placebo.
+
+Đã so ba mức pivot: 5 phiên xác nhận 13,3%, trễ 37 phiên, 19,3% close quay lại dưới resistance; 3 phiên như bảng trên; 2 phiên xác nhận 33,5%, trễ 15 phiên, 34,6%. Lợi suất 60 phiên đều khoảng +7%. Chọn 3 phiên vì pivot 5 phiên bỏ sót nhịp điều chỉnh ngắn của xu hướng tăng theo bậc thang (ca MSB tháng 10/2026), còn 2 phiên coi cả dao động nhỏ là một nhịp. Đánh đổi là xác nhận sớm hơn nên giá dễ quay lại dưới resistance hơn.
+
+Xu hướng tăng thẳng, không có nhịp điều chỉnh nào đủ 3 phiên, vẫn không tạo được đỉnh và đáy swing nên chỉ dừng ở tiềm năng.
 
 ## Re-accumulation
 
@@ -358,7 +385,7 @@ Developing và Confirmed dùng cùng các điều kiện với Accumulation (h�
 
 Trên thẻ giai đoạn, Market State và cấu trúc hiện tách riêng. Khi đang trong Re-accumulation, Market State vẫn là Markup.
 
-**Số đo khám phá (cache H8, 311 mã, từ 2018):** 2.345 trên 7.765 range được xét Re-accumulation (30,2%; placebo 2.721 trên 8.413, 32,3%). Trong đó 1.041 từng Confirmed (44,4%; placebo 1.035, 38,0%). Lợi suất 60 phiên sau Confirmed +8,6% (placebo +3,8%). Chưa kiểm soát xu hướng chung của thị trường và các ca trùng thời điểm, nên chưa phải bằng chứng về lợi thế. "Nghiêng về" được tính đến cuối thời gian xét, có thể gồm cả phần sau breakout, nên chưa đo được khả năng dự báo hướng thoát.
+**Số đo khám phá (cache H8, 311 mã, từ 2018):** 2.481 trên 7.765 range được xét Re-accumulation (32,0%; placebo 2.812 trên 8.413, 33,4%). Trong đó 1.104 từng Confirmed (44,5%; placebo 1.076, 38,3%). Lợi suất 60 phiên sau Confirmed +8,5% (placebo +3,8%). Chưa kiểm soát xu hướng chung của thị trường và các ca trùng thời điểm, nên chưa phải bằng chứng về lợi thế. "Nghiêng về" được tính đến cuối thời gian xét, có thể gồm cả phần sau breakout, nên chưa đo được khả năng dự báo hướng thoát.
 
 **Chưa làm:** pha A chưa dùng BC làm mốc mà bắt đầu từ đầu range. Markup sau Re-accumulation vẫn tính là đoạn mới nên có thể hiện Early Markup, chưa nối với xu hướng trước. Phân xử với Distribution: xem mục Distribution.
 
@@ -464,15 +491,15 @@ Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫ
 
 | Chỉ số | Thật | Placebo |
 |---|---|---|
-| Range được xét Distribution | 2.096 trên 7.765 (27,0%) | 2.559 trên 8.413 (30,4%) |
-| Từng Confirmed | 819 (39,1%) | 989 (38,6%) |
-| Lợi suất 60 phiên sau Confirmed | +2,8% | +3,4% |
-| Đại diện là Distribution | 721 | 763 |
-| Đại diện là Re-accumulation | 755 | 806 |
+| Range được xét Distribution | 2.222 trên 7.765 (28,6%) | 2.664 trên 8.413 (31,7%) |
+| Từng Confirmed | 883 (39,7%) | 1.051 (39,5%) |
+| Lợi suất 60 phiên sau Confirmed | +3,0% | +3,5% |
+| Đại diện là Distribution | 782 | 808 |
+| Đại diện là Re-accumulation | 798 | 842 |
 
 Lợi suất sau Confirmed vẫn dương và không thấp hơn placebo một cách rõ ràng, nên nhãn này chưa cho thấy giá giảm tiếp. Sau khi dùng chung điều kiện "Markup trước đó", số range đại diện của hai bên đã cân bằng (trước đó là 1.172 so với 105). Cấu trúc đại diện khớp với hướng thoát khoảng 99% trên cả dữ liệu thật và placebo, vì mức Confirmed của hai bên dựa vào chính hướng thoát: đây là phân loại sau khi đã biết kết quả, không phải dự báo.
 
-Đã so hai cách đặt điều kiện: chỉ cần HH–HL (5,2% số range được xét, placebo 5,3%) và HH–HL hoặc tăng từ 30% (31,7%, placebo 34,2%). Chọn cách sau vì khớp với "Markup hoặc xu hướng tăng kéo dài" và xét được nhiều range hơn. Với cách này, Re-accumulation không còn đòi hỏi HH–HL trong mọi trường hợp.
+Đã so hai cách đặt điều kiện: chỉ cần HH–HL (10,7% số range được xét, placebo 10,2%) và HH–HL hoặc tăng từ 30% (33,5%, placebo 35,5%). Chọn cách sau vì khớp với "Markup hoặc xu hướng tăng kéo dài" và xét được nhiều range hơn. Với cách này, Re-accumulation không còn đòi hỏi HH–HL trong mọi trường hợp.
 
 ## Chưa có xu hướng
 
@@ -492,6 +519,6 @@ Cache H8, 311 mã, từ 2018, `config/v3.yaml`. Đây là phân tích trên mẫ
 Mức mặc định được chọn vì đáy đầu tiên sau khi thủng luôn thấp hơn hỗ trợ, nên phải có 2 đáy mới tạo được chuỗi đáy, đỉnh thấp hơn, đáy thấp hơn; và mức này cách placebo xa nhất ở chỉ số quay lại resistance.
 
 **Hệ quả cần biết:**
-- Chỉ khoảng 1/12 lần thoát xuống được xác nhận Markdown; 36,5% còn tiềm năng và 55,6% bị bác bỏ. Điều kiện chặn nhiều nhất là cung áp đảo cầu, tiếp đến là LH–LL và nhịp hồi yếu.
-- Khi được xác nhận, giá trung vị đã dưới hỗ trợ 13,4%, và lợi suất 20 phiên sau đó khoảng +0,5%. Vì vậy nhãn xác nhận mô tả điều đã xảy ra, không phải tín hiệu.
+- Chỉ khoảng 1/11 lần thoát xuống được xác nhận Markdown (9,1%; placebo 9,6%); 49,2% còn tiềm năng và 42,4% bị bác bỏ. Trước quy tắc mở lại, hai số cuối là 36,5% và 55,6%. Quy tắc này mở lại 20,6% số giả thuyết (761 trên 3.692; placebo 23,7%), nhưng chỉ 19 trong đó được xác nhận (placebo 36), quá ít để kết luận về lợi suất. Điều kiện chặn nhiều nhất là cung áp đảo cầu, tiếp đến là LH–LL và nhịp hồi yếu.
+- Khi được xác nhận (đo trước quy tắc mở lại), giá trung vị đã dưới hỗ trợ 13,4%, và lợi suất 20 phiên sau đó khoảng +0,5%. Vì vậy nhãn xác nhận mô tả điều đã xảy ra, không phải tín hiệu.
 - Tỷ lệ xác nhận trên dữ liệu thật và placebo gần bằng nhau, nên 5 điều kiện chưa cho thấy phân biệt được thị trường thật với dữ liệu xáo trộn.

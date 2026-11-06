@@ -17,7 +17,7 @@ from wyckoff.indicators.core import add_indicators
 from wyckoff.indicators.limits import add_limit_flags
 from wyckoff.phases import CurrentPhase, PhaseResult, classify_phases, current_phase
 from wyckoff.phases_distribution import CurrentDistributionPhase, classify_distribution_phases, current_distribution_phase
-from wyckoff.revision import RevisionResult, build_revision
+from wyckoff.revision import REJECTED, RangeVerdict, RevisionResult, _watch_stop, build_revision
 from wyckoff.stages import MARKDOWN, MARKUP, CurrentStage, StageResult, classify_stages, current_stage
 from wyckoff.strength import TrendStrength, trend_strength
 
@@ -68,6 +68,34 @@ class AnalysisResult:
 
     def current_stage(self) -> CurrentStage:
         return current_stage(self.stages)
+
+    def _no_standing_trend(self) -> bool:
+        st, date = self.current_stage(), self.df.index[-1]
+        hyp = self.revision.hypothesis_on(date)
+        return hyp.status == REJECTED if hyp is not None else st.stage not in (MARKUP, MARKDOWN)
+
+    def live_structure(self) -> RangeVerdict | None:
+        """Cấu trúc còn hiệu lực tại phiên cuối: trong range, hoặc giá đã rời range mà không có xu hướng nào còn đứng
+        (ví dụ thoát xuống rồi quay lại, Markdown bị bác bỏ). Xu hướng còn đứng thì giai đoạn là xu hướng đó."""
+        st, date = self.current_stage(), self.df.index[-1]
+        if st.range_id is not None:
+            return self.revision.live_structure(st.range_id, date)
+        return self.revision.live_structure(self.current().range_id, date) if self._no_standing_trend() else None
+
+    def reopened_range_id(self) -> int | None:
+        """Range đã thoát nhưng vẫn là cấu trúc hiện tại: không có xu hướng nào còn đứng và range còn trong thời hạn đánh giá.
+        Thoát xuống thì xét theo giá, nên range chưa được xét là Accumulation cũng được tính."""
+        rid = self.current().range_id
+        if self.current_stage().range_id is not None or rid is None or not self._no_standing_trend():
+            return None
+        rng = next(r for r in self.ranges if r.range_id == rid)
+        last = len(self.df) - 1
+        if rng.exit_direction == "down":
+            close = self.df["close"].to_numpy(dtype=float)
+            stop = _watch_stop(close, rng.end_confirmed_idx, rng.support, rng.resistance, self.cfg.revision.spring_window, last)
+            return rid if stop >= last else None
+        v = self.revision.primary_of(rid)[0]
+        return rid if v is not None and v.active_on(self.df.index[-1]) else None
 
     def current_distribution_phase(self) -> CurrentDistributionPhase:
         return current_distribution_phase(self.distribution_phases)

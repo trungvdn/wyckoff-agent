@@ -23,10 +23,19 @@ Quy tắc (ngưỡng trong `RevisionConfig`, là khám phá trên mẫu H8, chư
     Markup từ SMA50 (5 close liên tiếp)
         nền giá là range gần nhất đã kết thúc; không có nền thì chỉ là tiềm năng. Close dưới SMA50 lúc vào xu hướng -> bác bỏ.
     Xu hướng kết thúc mà chưa đủ điều kiện: giữ nguyên tiềm năng.
-    Spring kéo dài
-        range thoát xuống, trong 30 phiên có phiên close >= support + 1 tick với demand, Markdown chưa xác nhận.
-        Sự kiện ở phiên close đầu tiên dưới support, xác nhận tại phiên demand. Volume và độ sâu khi thoát chỉ để mô tả.
-        Đã có SC xác nhận tạo sau cú thủng -> không còn là Spring của range cũ.
+    Spring (định nghĩa đầy đủ: docs/event-definitions.md)
+        ứng viên: xuyên hỗ trợ của range, có dấu hiệu từ chối giá thấp. Volume cao không loại Spring.
+        xác nhận: lấy lại hỗ trợ, và có phiên demand, hoặc phản ứng tăng đủ xa, hoặc Test thành công.
+        bác bỏ (SPRING_FAILED): không lấy lại hỗ trợ kịp, đáy mới sau khi quay lại, không có phản ứng, Markdown xác nhận, có SC mới. Sau xác nhận: close < đáy - 0,5 ATR.
+        hồi phục nhanh hay kéo dài chỉ là nhãn theo số phiên đến khi lấy lại hỗ trợ.
+    ST (định nghĩa đầy đủ: docs/event-definitions.md)
+        ứng viên: sau SC + AR hoặc BC + AR, giá quay lại vùng cao trào với volume hoặc biên độ yếu hơn tương đối.
+        xác nhận: không có áp lực tương đương cao trào, và giá phản ứng khỏi vùng kiểm tra.
+        bác bỏ: xuyên sâu khỏi vùng, có áp lực tương đương cao trào, hoặc không có phản ứng. Chỉ bác bỏ lần ST đó, không làm mất cấu trúc.
+    AR (định nghĩa đầy đủ: docs/event-definitions.md)
+        ứng viên: sau SC hoặc BC, phản ứng ngược chiều với biên độ lớn, rời vùng cao trào tối thiểu 2 ATR. Volume không bắt buộc.
+        xác nhận: nhịp phản ứng hoàn tất, tạo swing high (Accumulation) hoặc swing low (Distribution). Không cần ST.
+        bác bỏ: mất vùng cao trào, hết thời gian mà chưa tạo swing, hoặc SC / BC bị bác bỏ.
     LPS (định nghĩa đầy đủ: docs/event-definitions.md)
         ứng viên: sau SOS hoặc SOS nội bộ, điều chỉnh về hỗ trợ, volume và biên độ giảm, hỗ trợ giữ hoặc chỉ thủng nhẹ.
         xác nhận: giá đảo chiều tăng vượt đỉnh phiên ứng viên, volume cao hơn phiên ứng viên (hoặc khóa trần).
@@ -59,11 +68,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from wyckoff.config import Config
+from wyckoff.config import Config, RevisionConfig
+from wyckoff.detectors.distribution import _bcs
 from wyckoff.detectors.events import _candidate, _follow_through, _make_event, _rounded, floor_days
 from wyckoff.detectors.lifecycle import base_event_id
 from wyckoff.detectors.models import Event, EventStatus, EventType, StatusChange, Swing, TradingRange
-from wyckoff.detectors.structure import _weakness, detect_ar, detect_ps, detect_st
+from wyckoff.detectors.structure import _weakness, detect_ps
+from wyckoff.detectors.swings import find_swings
 from wyckoff.fmt import vn_g, vn_num, vn_ts
 from wyckoff.indicators.ticks import tick_size
 from wyckoff.phases import PhaseResult, PhaseSegment, _segments
@@ -162,6 +173,17 @@ class RangeVerdict:
     supporting: tuple[str, ...] = ()         # sự kiện làm bằng chứng, không bắt buộc
     demand_idx: int | None = None            # phiên đầu tiên cầu bắt đầu kiểm soát, không cần SOS (mốc pha D)
     leaning: str | None = None               # chỉ với range sau Markup: Re-accumulation | Distribution | chưa rõ
+    watch_end: pd.Timestamp | None = None    # phiên cuối còn đánh giá; sau đó `conditions` không còn cập nhật
+
+    def active_on(self, date: pd.Timestamp) -> bool:
+        return self.watch_end is None or date <= self.watch_end
+
+    def evidence(self, rc: RevisionConfig) -> dict[str, Any]:
+        """Độ đầy đủ của bằng chứng, không phải xác suất: tỷ lệ xác nhận theo mức này gần bằng dữ liệu xáo trộn (docs/stage-definitions.md)."""
+        met, total = sum(c.met for c in self.conditions), len(self.conditions)
+        ratio = met / total if total else 0.0
+        level = "cao" if ratio >= rc.evidence_high else "trung bình" if ratio >= rc.evidence_medium else "thấp"
+        return {"met": met, "total": total, "level": level}
 
     @property
     def is_reaccumulation(self) -> bool:
@@ -193,7 +215,7 @@ class RangeVerdict:
 @dataclass
 class RevisionResult:
     hypotheses: list[TrendHypothesis]
-    events: list[Event]                       # Spring kéo dài, LPS, SC và PS / AR / ST của SC, đã từng xác nhận
+    events: list[Event]                       # Spring, Spring Test, LPS, SC, PS, AR, ST theo định nghĩa mới, đã từng xác nhận
     candidates: list[Event]                   # các trường hợp chưa / không xác nhận
     assessments: dict[str, tuple[Verdict, ...]]   # event_id -> lịch sử tiềm năng / xác nhận / bác bỏ
     phase_series: pd.DataFrame                # pha hồi cứu mỗi phiên
@@ -205,6 +227,11 @@ class RevisionResult:
     def primary_of(self, range_id: int | None) -> tuple[RangeVerdict | None, bool]:
         """Cấu trúc đại diện của range (Accumulation, Re-accumulation hoặc Distribution) và cờ đã phân định."""
         return _primary_verdict(self.range_verdicts.get(range_id), self.distribution_verdicts.get(range_id))
+
+    def live_structure(self, range_id: int | None, date: pd.Timestamp) -> RangeVerdict | None:
+        """Cấu trúc đại diện đã phân định, đang hình thành hoặc đã xác nhận, còn được đánh giá tại `date`."""
+        v, decided = self.primary_of(range_id)
+        return v if v is not None and decided and v.status in (DEVELOPING, CONFIRMED) and v.active_on(date) else None
 
     def market_view(self, range_id: int | None, in_range: bool, date: pd.Timestamp) -> dict[str, Any]:
         """Tách hai khái niệm: Market State (Accumulation, Markup, Distribution, Markdown) và Market Structure
@@ -245,7 +272,7 @@ class RevisionResult:
         rows: list[tuple[pd.Timestamp, int, str, str, str]] = []
         for h in self.hypotheses:
             rows += [(v.date, v.idx, f"{h.stage} từ {vn_ts(h.start_date)}", v.status, v.reason)
-                     for v in h.history if v.status != POTENTIAL]
+                     for v in h.history if v.status != POTENTIAL or v.idx > h.start_idx]   # tiềm năng sau mốc đầu: giả thuyết được mở lại
         for rv in list(self.range_verdicts.values()) + list(self.distribution_verdicts.values()):
             rows += [(v.date, v.idx, f"TR#{rv.range_id} là {rv.structure_type}", v.status, v.reason) for v in rv.history]
         for e in self.events:
@@ -267,7 +294,7 @@ def event_status(e: Event) -> str:
 
 
 def _event_name(e: Event) -> str:
-    return {"extended": "Spring kéo dài"}.get(e.details.get("spring_type", ""), e.kind.value)
+    return {"extended": "Spring kéo dài", "quick": "Spring hồi phục nhanh"}.get(e.details.get("spring_type", ""), e.kind.value)
 
 
 # ---------------------------------------------------------------- Markdown / Markup
@@ -408,6 +435,18 @@ class _SideStats:
         return None if n < self.min_bars else float((self.tables[(side, what)][b + 1] - self.tables[(side, what)][a]) / n)
 
 
+def _watch_stop(close: np.ndarray, x: int, support: float, resistance: float, window: int, limit: int) -> int:
+    """Phiên cuối còn đánh giá range đã thoát xuống: `window` phiên kể từ phiên `x` hoặc phiên cuối close còn trong range.
+    Giá còn trong range thì range còn được đánh giá. Chỉ dùng close đến phiên đang xét nên không nhìn trước."""
+    deadline = x + window
+    t = x
+    while t <= min(deadline, limit):
+        if support - _EPS <= close[t] <= resistance + _EPS:
+            deadline = t + window
+        t += 1
+    return min(deadline, limit)
+
+
 def _ascending_run(pivots: list[Swing], b: int) -> int:
     """Số pivot tăng dần liên tiếp tính từ pivot mới nhất, chỉ đếm pivot tạo từ phiên b trở đi, so với pivot ngay trước đó."""
     seq = [s for s in pivots if s.idx < b][-1:] + [s for s in pivots if s.idx >= b]
@@ -422,7 +461,10 @@ def _ascending_run(pivots: list[Swing], b: int) -> int:
 class _MarkupTest:
     """Điều kiện Markup tại phiên t (docs/stage-definitions.md). `b`: phiên close đầu tiên trên kháng cự. Chỉ dùng dữ liệu <= t."""
 
-    def __init__(self, df: pd.DataFrame, swings: list[Swing], stats: _SideStats, cfg: Config) -> None:
+    def __init__(self, df: pd.DataFrame, stats: _SideStats, cfg: Config) -> None:
+        # Pivot ngắn hơn biên range: xu hướng tăng theo bậc thang có nhịp điều chỉnh ngắn, pivot dài bỏ sót các đỉnh, đáy đó
+        k = cfg.revision.mk_pivot_bars
+        swings = find_swings(df, replace(cfg.swings, left=k, right=k), source=cfg.ranges.pivot_source)
         self.c = df["close"].to_numpy(dtype=float)
         self.atr = df["atr"].to_numpy(dtype=float)
         self.stats = stats
@@ -494,12 +536,13 @@ def _trend_hypotheses(
     rc = cfg.revision
     close = df["close"].to_numpy(dtype=float)
     sma = df["sma"].to_numpy(dtype=float)
+    atr = df["atr"].to_numpy(dtype=float)
     dates = df.index
     last = len(df) - 1
     exit_at = {r.end_confirmed_idx: r for r in ranges if r.end_confirmed_idx is not None}
     reclaim_conf = {(e.range_id, e.confirmed_idx) for e in events if e.kind == EventType.SOS and e.details.get("reclaim")}
     md_test = _MarkdownTest(df, swings, events, cfg)
-    mk_test = _MarkupTest(df, swings, _SideStats(df, cfg), cfg)
+    mk_test = _MarkupTest(df, _SideStats(df, cfg), cfg)
     up_events = sorted((e for e in list(events) + list(later) if e.kind in (EventType.SOS, EventType.LPS)
                         and (e.kind != EventType.LPS or e.details.get("lps_definition"))), key=lambda e: e.confirmed_idx)
     support_events = sorted((e for e in distribution if e.kind in (EventType.SOW, EventType.LPSY)), key=lambda e: e.confirmed_idx)
@@ -559,13 +602,30 @@ def _trend_hypotheses(
 
         hist = [Verdict(POTENTIAL, a, dates[a], opening)]
         conf: int | None = None
+        waiting_exit = False     # Markdown từ range đã bị bác bỏ: chờ lần thủng tiếp theo
+        exit_run = 0
         for t in range(a, last + 1):
+            if waiting_exit:
+                if t > b:
+                    break
+                # Thủng lại theo cùng tiêu chí thoát range: mở lại giả thuyết, đo lại từ cú thủng này
+                exit_run = exit_run + 1 if close[t] < ref - cfg.ranges.exit_atr * atr[t] else 0
+                if exit_run >= cfg.ranges.exit_bars:
+                    waiting_exit = False
+                    first_below = t
+                    while first_below > 0 and close[first_below - 1] < support - _EPS:
+                        first_below -= 1
+                    hist.append(Verdict(POTENTIAL, t, dates[t], f"close thủng lại support {vn_num(ref)} {cfg.ranges.exit_bars} phiên liên tiếp, chờ xác nhận"))
+                continue
             if conf is None:
                 if t > b:
                     break
                 why = rejected_before(t) if t > a else None
                 if why:
                     hist.append(Verdict(REJECTED, t, dates[t], why))
+                    if down and from_range:
+                        waiting_exit, exit_run = True, 0
+                        continue
                     break
                 if down:
                     if support is None:
@@ -639,89 +699,185 @@ def _lps_break(close: np.ndarray, res: float, start: int, watch: int, cfg: Confi
     return None
 
 
-def _extended_springs(
+def _springs(
     df: pd.DataFrame, ranges: list[TradingRange], hyps: list[TrendHypothesis], scs: list[Event], cfg: Config
-) -> tuple[list[Event], list[Event]]:
-    rc = cfg.revision
+) -> tuple[list[Event], list[Event], list[Event]]:
+    """Spring theo định nghĩa 06/11/2026 (docs/event-definitions.md): (đã từng xác nhận, ứng viên chưa / không xác nhận, Spring Test).
+    Xuyên hỗ trợ của range còn hoạt động, hoặc range đã thoát xuống mà Markdown đang bị bác bỏ và còn trong thời hạn đánh giá.
+    Candidate: có dấu hiệu từ chối giá thấp. Confirmed: đã lấy lại hỗ trợ, và có phiên demand, hoặc phản ứng tăng đủ xa, hoặc Test thành công.
+    Failed: không lấy lại hỗ trợ kịp, tạo đáy mới sau khi quay lại, không có phản ứng, Markdown xác nhận, có SC mới hoặc range mới.
+    Xuyên hỗ trợ mà chưa từng có dấu hiệu từ chối thì là breakdown thông thường, không ghi sự kiện. Chỉ dùng dữ liệu đến phiên đang xét."""
+    rc, sp = cfg.revision, cfg.spring
     r_ = _rounded(df, cfg.indicators.ratio_decimals)
     vr, cp = r_["vol_ratio"].to_numpy(dtype=float), r_["close_pos"].to_numpy(dtype=float)
-    o, c, low = (df[k].to_numpy(dtype=float) for k in ("open", "close", "low"))
+    o, h_, c, low, volume = (df[k].to_numpy(dtype=float) for k in ("open", "high", "close", "low", "volume"))
+    spread = h_ - low
     atr_ref = df["atr_ref"].to_numpy(dtype=float)
     last = len(df) - 1
     dates = df.index
-    range_conf = [r.confirmed_idx for r in ranges]
-    rng_by_id = {r.range_id: r for r in ranges}
-    events: list[Event] = []
-    candidates: list[Event] = []
-    for h in hyps:
-        if h.stage != MARKDOWN or h.source != "range_exit":
-            continue
-        rng = rng_by_id[h.range_id]
-        x, sup = h.start_idx, rng.support
+    range_conf = sorted(r.confirmed_idx for r in ranges)
+    md_by = {h.range_id: h for h in hyps if h.stage == MARKDOWN and h.source == "range_exit"}
+    atr_k = cfg.phase.spring_invalid_atr
+    confirmed: list[Event] = []
+    others: list[Event] = []
+    tests: list[Event] = []
+    for rng in ranges:
+        sup, res = rng.support, rng.resistance
         tick = tick_size(sup, cfg.data.exchange)
-        conf_md = next((v.idx for v in h.history if v.status == CONFIRMED), None)
-        b = x
-        while b > 0 and c[b - 1] < sup:
-            b -= 1
-        limit = min(x + rc.spring_window, last)
-        next_range = min((q for q in range_conf if q > x), default=last + 1)
-        end_reason = f"không có phiên demand trong {rc.spring_window} phiên"
-        found = None
-        ended_at = limit if x + rc.spring_window <= last else None
-        # SC mới tạo sau cú thủng: giá đã sang cấu trúc mới, cú thủng không còn là Spring của range cũ
-        later_scs = sorted((s for s in scs if s.idx > b), key=lambda s: s.confirmed_idx)
+        x = rng.end_confirmed_idx
+        next_range = next((q for q in range_conf if q > rng.confirmed_idx), last + 1)
+        hyp = md_by.get(rng.range_id) if rng.exit_direction == "down" else None
+        conf_md = None if hyp is None else next((v.idx for v in hyp.history if v.status == CONFIRMED), None)
+        if x is None:
+            limit = min(last, next_range - 1)
+        elif rng.exit_direction == "down":
+            limit = _watch_stop(c, x, sup, res, rc.spring_window, min(last, next_range - 1))
+        else:
+            limit = min(x, last, next_range - 1)
 
-        def new_sc_at(j: int) -> Event | None:
-            return next((s for s in later_scs if s.confirmed_idx <= j and (s.invalidated is None or s.invalidated.idx > j)), None)
+        def pen(j: int) -> float:
+            return max(sp.min_penetration_atr * atr_ref[j], sp.min_penetration_ticks * tick)
 
-        for t in range(x + 1, limit + 1):
-            if t >= next_range:
-                ended_at, end_reason = t, "range mới đã xác nhận"
-                break
-            if conf_md is not None and t >= conf_md:
-                ended_at, end_reason = t, "Markdown đã xác nhận"
-                break
-            sc_new = new_sc_at(t)
-            if sc_new is not None:
-                ended_at, end_reason = t, f"đã có SC mới {vn_ts(sc_new.date)}: cấu trúc mới, không phải Spring của range cũ"
-                break
-            if c[t] >= sup + cfg.spring.recovery_min_ticks * tick - _EPS and _is_demand(t, vr, cp, o, c, cfg):
-                found = t
-                break
-        stop = found if found is not None else x
-        below = c[b:stop + 1] < sup
-        details: dict[str, Any] = {
-            "spring_type": "extended", "support": round(sup, 4), "exit_date": f"{dates[x]:%Y-%m-%d}",
-            "lowest_low": float(low[b:stop + 1].min()),
-            "penetration_atr": round(float((sup - low[b:stop + 1].min()) / atr_ref[x]), 3),
-            "depth_close_pct": round(float((sup - c[b:stop + 1].min()) / sup * 100), 2),
-            "bars_below_support": int(below.sum()),
-            "mean_vol_ratio_below_support": round(float(np.nanmean(vr[b:stop + 1][below])), 3) if below.any() else None,
-            "max_vol_ratio_below_support": round(float(np.nanmax(vr[b:stop + 1][below])), 3) if below.any() else None,
-        }
-        weak = details["mean_vol_ratio_below_support"] is not None and details["mean_vol_ratio_below_support"] < rc.weak_break_vol_ratio
-        details["breakdown"] = "yếu" if weak else "mạnh"
-        pending = StatusChange(EventStatus.CANDIDATE, x, dates[x], "thoát xuống, chờ demand quay lại")
-        if found is None:
-            hist = [pending] + ([StatusChange(EventStatus.INVALIDATED, ended_at, dates[ended_at], end_reason)] if ended_at is not None else [])
-            candidates.append(_candidate(df, EventType.SPRING, b, h.range_id, details, hist))
-            continue
-        details.update({"recovery_date": f"{dates[found]:%Y-%m-%d}", "recovery_close": float(c[found]),
-                        "recovery_vol_ratio": float(vr[found]), "recovery_close_pos": float(cp[found])})
-        e = _make_event(df, EventType.SPRING, b, found, h.range_id, details)
-        hist = [pending, StatusChange(EventStatus.CONFIRMED, found, dates[found], "close quay lại trên support với demand")]
-        k = cfg.phase.spring_invalid_atr
-        spring_low = details["lowest_low"]
-        t = _first_close_below(c, found, cfg.lifecycle.watch_bars, lambda j: spring_low - k * atr_ref[j])
-        # SC tạo trước phiên hồi nhưng xác nhận sau đó cũng làm mất Spring
-        late_sc = next((s for s in later_scs if s.idx <= found and s.confirmed_idx > found), None)
-        if late_sc is not None and (t is None or late_sc.confirmed_idx < t):
-            hist.append(StatusChange(EventStatus.INVALIDATED, late_sc.confirmed_idx, dates[late_sc.confirmed_idx],
-                                     f"SC mới {vn_ts(late_sc.date)} đã xác nhận: cấu trúc mới, không phải Spring của range cũ"))
-        elif t is not None:
-            hist.append(StatusChange(EventStatus.INVALIDATED, t, dates[t], f"close {vn_num(c[t])} < đáy Spring {vn_num(spring_low)} - {vn_g(k)} ATR"))
-        events.append(replace(e, history=tuple(hist)))
-    return events, candidates
+        kept: list[Event] = []
+        b = max(rng.confirmed_idx + sp.min_bars_after_confirm, 1)
+        while b <= limit:
+            eligible = x is None or b <= x or (hyp is not None and hyp.status_at(b - 1) == REJECTED)
+            if not (eligible and low[b] < sup - pen(b) - _EPS and low[b - 1] >= sup - pen(b - 1) - _EPS):
+                b += 1
+                continue
+            later_scs = [s for s in scs if s.idx >= b]
+            lowest = float(low[b])
+            cand = reclaim = conf = None
+            how = ""
+            fail: tuple[int, str] | None = None
+            end = b
+            for t in range(b, last + 1):
+                end = t
+                if t > limit and reclaim is None:
+                    fail = t, "hết thời hạn đánh giá range"
+                    break
+                if t >= next_range:
+                    fail = t, "range mới đã xác nhận"
+                    break
+                if conf_md is not None and t >= conf_md:
+                    fail = t, "Markdown đã xác nhận"
+                    break
+                sc_new = next((s for s in later_scs if s.confirmed_idx <= t and (s.invalidated is None or s.invalidated.idx > t)), None)
+                if sc_new is not None:
+                    fail = t, f"đã có SC mới {vn_ts(sc_new.date)}: cấu trúc mới, không phải Spring của range cũ"
+                    break
+                if reclaim is not None and t > reclaim and low[t] < lowest - _EPS:
+                    fail = t, f"tạo đáy mới {vn_num(low[t])} sau khi quay lại hỗ trợ"
+                    break
+                lowest = min(lowest, float(low[t]))
+                if reclaim is None:
+                    if cand is None and (cp[t] >= sp.recovery_min_close_pos - _EPS or c[t] >= sup - _EPS):
+                        cand = t
+                    if c[t] >= sup + sp.recovery_min_ticks * tick - _EPS:
+                        reclaim = t
+                        cand = t if cand is None else cand
+                    elif t - b + 1 >= rc.spring_max_bars:
+                        fail = t, f"không lấy lại hỗ trợ trong {rc.spring_max_bars} phiên"
+                        break
+                if reclaim is None:
+                    continue
+                pen_bars = [j for j in range(b, reclaim + 1) if low[j] < sup]
+                if _is_demand(t, vr, cp, o, c, cfg) and c[t] >= sup - _EPS:
+                    conf, how = t, "phiên demand trên hỗ trợ"
+                elif c[t] >= lowest + rc.spring_reaction_atr * atr_ref[b] - _EPS:   # ATR tại phiên xuyên: giá đi ngang làm ATR giảm, không phải phản ứng
+                    conf, how = t, f"phản ứng tăng tối thiểu {vn_g(rc.spring_reaction_atr)} ATR từ đáy"
+                elif t > reclaim and low[t] <= sup + sp.test_proximity_atr * atr_ref[t] + _EPS and sup - _EPS <= c[t] <= res + _EPS \
+                        and volume[t] < sp.test_vol_factor * max(volume[j] for j in pen_bars) and spread[t] < max(spread[j] for j in pen_bars):
+                    conf, how = t, "Test thành công: volume thấp, biên độ hẹp, giữ hỗ trợ"
+                if conf is not None:
+                    break
+                if t - reclaim >= sp.test_window:
+                    fail = t, f"không có phản ứng cầu trong {sp.test_window} phiên sau khi quay lại"
+                    break
+            next_b = end + 1
+            if cand is None:
+                b = next_b           # breakdown thông thường, chưa từng từ chối giá thấp
+                continue
+            stop = reclaim if reclaim is not None else end
+            seg = range(b, stop + 1)
+            below = [j for j in seg if c[j] < sup]
+            pen_all = [j for j in seg if low[j] < sup]
+            # Xuyên nhiều phiên: Spring đặt tại phiên xa range nhất, tức phiên có high thấp nhất. Mốc này chốt tại phiên lấy lại hỗ trợ
+            at = min(pen_all, key=lambda j: (h_[j], j)) if pen_all else b
+            max_vr = float(max(vr[j] for j in pen_all)) if pen_all else None
+            details: dict[str, Any] = {
+                "spring_definition": "candidate_confirmed",
+                "spring_type": "quick" if reclaim is not None and reclaim - b + 1 <= rc.spring_quick_bars else "extended",
+                "support": round(sup, 4), "lowest_low": lowest, "penetration_atr": round(float((sup - lowest) / atr_ref[b]), 3),
+                "penetration_date": f"{dates[b]:%Y-%m-%d}", "bars_below_support": len(below), "max_vol_ratio_below_support": max_vr,
+                "volume_profile": None if max_vr is None else "thấp" if max_vr < sp.max_vol_ratio else "cao",
+            }
+            if x is not None and b >= x - cfg.ranges.exit_bars + 1 or (x is not None and reclaim is not None and reclaim > x):
+                details["exit_date"] = f"{dates[x]:%Y-%m-%d}"
+            if reclaim is not None:
+                details.update({"recovery_date": f"{dates[reclaim]:%Y-%m-%d}", "recovery_bars": reclaim - b + 1, "recovery_close": float(c[reclaim]),
+                                "recovery_vol_ratio": float(vr[reclaim]), "recovery_close_pos": float(cp[reclaim])})
+            pending = StatusChange(EventStatus.CANDIDATE, cand, dates[cand], "xuyên hỗ trợ, có dấu hiệu từ chối giá thấp")
+            if conf is None:
+                hist = [pending] + ([StatusChange(EventStatus.INVALIDATED, fail[0], dates[fail[0]], fail[1])] if fail else [])
+                others.append(_candidate(df, EventType.SPRING, at, rng.range_id, details, hist))
+                if fail is None:
+                    break
+                b = next_b
+                continue
+            near = [s for s in kept if s.invalidated is None and b - s.idx < sp.merge_bars]
+            if near and lowest >= min(s.details["lowest_low"] for s in near) - _EPS:
+                into = min(near, key=lambda s: s.details["lowest_low"])
+                others.append(_candidate(df, EventType.SPRING, at, rng.range_id, {**details, "merged_into_date": f"{into.date:%Y-%m-%d}"}, [
+                    pending, StatusChange(EventStatus.REVISED, conf, dates[conf], f"gộp vào Spring {vn_ts(into.date)} (cách dưới {sp.merge_bars} phiên, đáy không thấp hơn)")]))
+                b = next_b
+                continue
+            details["confirmation"] = how
+            hist = [pending, StatusChange(EventStatus.CONFIRMED, conf, dates[conf], how)]
+            gone = _first_close_below(c, conf, cfg.lifecycle.watch_bars, lambda j: lowest - atr_k * atr_ref[j])
+            late_sc = next((s for s in later_scs if s.idx <= conf and s.confirmed_idx > conf), None)
+            if late_sc is not None and (gone is None or late_sc.confirmed_idx < gone):
+                hist.append(StatusChange(EventStatus.INVALIDATED, late_sc.confirmed_idx, dates[late_sc.confirmed_idx],
+                                         f"SC mới {vn_ts(late_sc.date)} đã xác nhận: cấu trúc mới, không phải Spring của range cũ"))
+            elif gone is not None:
+                hist.append(StatusChange(EventStatus.INVALIDATED, gone, dates[gone], f"close {vn_num(c[gone])} < đáy Spring {vn_num(lowest)} - {vn_g(atr_k)} ATR"))
+            # Đáy mới trong khoảng gộp: Spring mới thay Spring trước
+            for s in near:
+                i_s = next(i for i, y in enumerate(confirmed) if y is s)
+                extra = StatusChange(EventStatus.INVALIDATED, conf, dates[conf], f"đã có Spring {vn_ts(dates[at])} với đáy thấp hơn")
+                base = [z for z in s.history if z.status != EventStatus.INVALIDATED or z.idx < conf]
+                if not any(z.status == EventStatus.INVALIDATED for z in base):
+                    upd = replace(s, history=tuple(base) + (extra,))
+                    confirmed[i_s] = upd
+                    kept[kept.index(s)] = upd
+            e = replace(_make_event(df, EventType.SPRING, at, conf, rng.range_id, details), history=tuple(hist))
+            confirmed.append(e)
+            kept.append(e)
+            # Spring Test: lần kiểm tra đầu tiên sau xác nhận, hoặc chính phiên xác nhận bằng Test
+            pen_bars = [j for j in range(b, reclaim + 1) if low[j] < sup]
+            shake_vol, shake_spread = max(volume[j] for j in pen_bars), max(spread[j] for j in pen_bars)
+            start = conf if how.startswith("Test") else conf + 1
+            for t in range(start, min(reclaim + sp.test_window, last, next_range - 1) + 1):
+                if low[t] < lowest - _EPS:
+                    break
+                if low[t] <= sup + sp.test_proximity_atr * atr_ref[t] + _EPS and sup - _EPS <= c[t] <= res + _EPS \
+                        and volume[t] < sp.test_vol_factor * shake_vol and spread[t] < shake_spread:
+                    tests.append(_make_event(df, EventType.TEST, t, t, rng.range_id, {
+                        "test_definition": "spring_test", "spring_date": f"{dates[at]:%Y-%m-%d}", "spring_low": lowest,
+                        "volume_vs_shakeout": round(float(volume[t] / shake_vol), 3), "support": round(sup, 4)}))
+                    break
+            b = next_b
+    # Spring bị bác bỏ thì Test của nó bị bác bỏ theo
+    by_spring = {(e.range_id, f"{e.date:%Y-%m-%d}"): e for e in confirmed}
+    linked: list[Event] = []
+    for t in tests:
+        hist = [StatusChange(EventStatus.CONFIRMED, t.idx, t.date)]
+        gone = by_spring[(t.range_id, t.details["spring_date"])].invalidated
+        if gone is not None:
+            at = max(gone.idx, t.idx)
+            hist.append(StatusChange(EventStatus.INVALIDATED, at, dates[at], f"Spring {vn_ts(pd.Timestamp(t.details['spring_date']))} bị bác bỏ"))
+        linked.append(replace(t, history=tuple(hist)))
+    return confirmed, others, linked
 
 
 def _lps_strengths(
@@ -911,7 +1067,7 @@ def _selling_climaxes(df: pd.DataFrame, stages: StageResult, cfg: Config) -> tup
             "decline_from_high": round(float(decline), 4), "width_atr": float(width[i]), "lower_wick": round(float(wick), 3),
             "absorption": "cùng phiên" if absorbed else "chờ phản ứng", "floor_days_before": int(floor_count[i]),
         }))
-    ar_conf = {e.details["sc_date"]: e.confirmed_idx for e in detect_ar(df, stubs, cfg.ar)}
+    ar_conf = {f"{dates[r['parent'].idx]:%Y-%m-%d}": r["conf"] for r in _ar_reactions(df, stubs, "up", cfg) if r["conf"] is not None}
 
     confirmed: list[Event] = []
     others: list[Event] = []
@@ -976,10 +1132,236 @@ def _selling_climaxes(df: pd.DataFrame, stages: StageResult, cfg: Config) -> tup
     return confirmed, others
 
 
+def _ar_reactions(df: pd.DataFrame, parents: list[Event], side: str, cfg: Config) -> list[dict[str, Any]]:
+    """Phản ứng ngược chiều sau SC (side "up") hoặc BC (side "down"), chỉ dùng dữ liệu đến phiên đang xét. Phía BC tính trên giá đổi dấu.
+    Phiên phản ứng: giá đi đúng chiều, biên độ từ `ar_min_spread_atr` ATR, đóng cửa ở nửa thuận chiều của phiên.
+    Ứng viên: đã có phiên phản ứng kể từ đáy vùng, và close rời đáy vùng tối thiểu `ar_min_displacement_atr` ATR. Không phụ thuộc volume hay phiên kế tiếp.
+    Xác nhận: pivot `k` phiên mỗi bên, từ phiên ứng viên trở đi. Không đạt ứng viên thì không có sự kiện nào."""
+    rc = cfg.revision
+    sign = 1.0 if side == "up" else -1.0
+    window, k = (cfg.ar.window, cfg.ar.pivot_bars) if side == "up" else (cfg.distribution.ar_window, cfg.distribution.ar_pivot_bars)
+    undercut = rc.sc_max_undercut_atr if side == "up" else cfg.distribution.bc_fail_atr
+    r_ = _rounded(df, cfg.indicators.ratio_decimals)
+    cp_raw = r_["close_pos"].to_numpy(dtype=float)
+    cp = cp_raw if side == "up" else 1.0 - cp_raw
+    c = sign * df["close"].to_numpy(dtype=float)
+    top = (df["high"] if side == "up" else -df["low"]).to_numpy(dtype=float)
+    bottom = (df["low"] if side == "up" else -df["high"]).to_numpy(dtype=float)
+    atr_ref = df["atr_ref"].to_numpy(dtype=float)
+    width = (df["tr"] / df["atr_ref"]).round(cfg.indicators.ratio_decimals).to_numpy(dtype=float)
+    last = len(c) - 1
+    out: list[dict[str, Any]] = []
+    for par in parents:
+        i = par.idx
+        floor = bottom[i] - undercut * atr_ref[i]
+        zone = float(bottom[i])
+        wide: int | None = None
+        t0: int | None = None
+        conf: int | None = None
+        rej: tuple[int, str] | None = None
+        for t in range(i + 1, min(i + window + k, last) + 1):
+            if c[t] < floor - _EPS:
+                rej = t, "lost"
+                break
+            if t0 is None:
+                if t > i + window:
+                    break
+                if bottom[t] < zone - _EPS:
+                    zone, wide = float(bottom[t]), None
+                if c[t] > c[t - 1] + _EPS and width[t] >= rc.ar_min_spread_atr - _EPS and cp[t] >= rc.ar_min_close_pos - _EPS:
+                    wide = t
+                if wide is not None and c[t] >= zone + rc.ar_min_displacement_atr * atr_ref[t] - _EPS:
+                    t0 = t
+            p = t - k
+            if t0 is not None and p >= t0 and top[p] > top[max(p - k, 0):p].max() + _EPS and top[p] >= top[p + 1:t + 1].max() - _EPS:
+                conf = t
+                break
+        if t0 is None:
+            continue
+        if conf is None and rej is None and i + window + k <= last:
+            rej = i + window + k, "no_swing"
+        out.append({"parent": par, "wide": wide, "t0": t0, "conf": conf, "peak": None if conf is None else conf - k, "zone": sign * zone, "rej": rej})
+    return out
+
+
+def _ar_events(df: pd.DataFrame, scs: list[Event], distribution: list[Event], cfg: Config) -> tuple[list[Event], list[Event]]:
+    """AR theo định nghĩa 06/11/2026 (docs/event-definitions.md): (đã từng xác nhận, ứng viên chưa / không xác nhận).
+    `ar_high` / `ar_low` cùng đáy SC / đỉnh BC là biên Trading Range ban đầu. SC, BC bị bác bỏ thì AR bị bác bỏ theo."""
+    dates = df.index
+    bcs, bc_failed = _bcs(distribution)
+    confirmed: list[Event] = []
+    others: list[Event] = []
+    r_ = _rounded(df, cfg.indicators.ratio_decimals)
+    vr = r_["vol_ratio"].to_numpy(dtype=float)
+    atr_ref = df["atr_ref"].to_numpy(dtype=float)
+    groups = (("up", EventType.AR, "sc", _ar_reactions(df, scs, "up", cfg)), ("down", EventType.AR_D, "bc", _ar_reactions(df, bcs, "down", cfg)))
+    for side, kind, tag, reactions in groups:
+        for r in reactions:
+            par, t0, peak, conf = r["parent"], r["t0"], r["peak"], r["conf"]
+            day = f"{par.date:%Y-%m-%d}"
+            name = "SC" if side == "up" else "BC"
+            at = peak if peak is not None else t0
+            end = float(df["high"].iloc[at] if side == "up" else df["low"].iloc[at])
+            details: dict[str, Any] = {
+                "ar_definition": "candidate_confirmed", "side": "accumulation" if side == "up" else "distribution", f"{tag}_date": day,
+                ("sc_low" if side == "up" else "bc_high"): round(r["zone"], 4),
+                ("rally_atr" if side == "up" else "reaction_atr"): round(abs(end - r["zone"]) / float(atr_ref[par.idx]), 3),
+                "reaction_date": f"{dates[r['wide']]:%Y-%m-%d}", "reaction_vol_ratio": float(vr[r["wide"]]),
+            }
+            pending = StatusChange(EventStatus.CANDIDATE, t0, dates[t0], f"phản ứng mạnh sau {name}, chờ hoàn tất nhịp")
+            lost = (r["rej"] is not None and r["rej"][1] == "lost")
+            why = None if r["rej"] is None else (f"close mất vùng {name} trước khi tạo swing" if lost else "hết thời gian, chưa tạo swing")
+            if conf is None:
+                hist = [pending] + ([StatusChange(EventStatus.INVALIDATED, r["rej"][0], dates[r["rej"][0]], why)] if r["rej"] else [])
+                others.append(_candidate(df, kind, t0, None, details, hist))
+                continue
+            details["ar_high" if side == "up" else "ar_low"] = end
+            parent_conf = max(par.confirmed_idx, 0)
+            known = max(conf, parent_conf)
+            hist = [pending, StatusChange(EventStatus.CONFIRMED, known, dates[known], "hoàn tất nhịp phản ứng, " + ("tạo swing high" if side == "up" else "tạo swing low"))]
+            gone = bc_failed.get(day) if side == "down" else None
+            if par.invalidated is not None:
+                gone = par.invalidated.idx if gone is None else min(gone, par.invalidated.idx)
+            if gone is not None:
+                gone = max(int(gone), known)
+                hist.append(StatusChange(EventStatus.INVALIDATED, gone, dates[gone], f"{name} {vn_ts(par.date)} bị bác bỏ"))
+            confirmed.append(replace(_make_event(df, kind, peak, known, None, details), history=tuple(hist)))
+    return confirmed, others
+
+
+def _st_tests(df: pd.DataFrame, par: Event, ar: Event, side: str, fail: float, cfg: Config) -> list[dict[str, Any]]:
+    """Các lần kiểm tra vùng cao trào sau SC + AR (side "up") hoặc BC + AR (side "down"), chỉ dùng dữ liệu đến phiên đang xét. Phía BC tính trên giá đổi dấu.
+    Áp lực "tương đương cao trào": phiên đi về phía vùng mà cả volume lẫn biên độ đều không yếu hơn, hoặc phiên khóa sàn (khóa trần với BC)."""
+    rc = cfg.revision
+    if side == "up":
+        sign, window, below, above, max_vol, max_spread, gap = 1.0, cfg.st.window, cfg.st.band_below_atr, cfg.st.band_above_atr, cfg.st.max_vol_vs_sc, cfg.st.max_spread_vs_sc, cfg.st.min_gap_bars
+        bottom, base, lock = df["low"].to_numpy(dtype=float), float(par.low), "floor_locked"
+    else:
+        d = cfg.distribution
+        sign, window, below, above, max_vol, max_spread, gap = -1.0, d.st_window, d.st_band_above_atr, d.st_band_below_atr, d.st_max_vol_vs_bc, d.st_max_spread_vs_bc, d.st_min_gap_bars
+        bottom, base, lock = -df["high"].to_numpy(dtype=float), -float(par.high), "ceiling_locked"
+    c = sign * df["close"].to_numpy(dtype=float)
+    volume = df["volume"].to_numpy(dtype=float)
+    spread = (df["high"] - df["low"]).to_numpy(dtype=float)
+    atr_ref = df["atr_ref"].to_numpy(dtype=float)
+    vr = np.nan_to_num(_rounded(df, cfg.indicators.ratio_decimals)["vol_ratio"].to_numpy(dtype=float))
+    locked = df[lock].to_numpy(dtype=bool) if lock in df.columns else np.zeros(len(c), dtype=bool)
+    last = len(c) - 1
+    par_vol, par_spread = float(volume[par.idx]), float(spread[par.idx])
+
+    def weak_volume(t: int) -> bool:
+        # So với cả cao trào và TB20: volume thấp hơn SC nhưng vẫn đột biến so với TB20 thì chưa phải suy yếu
+        return bool(volume[t] < max_vol * par_vol and vr[t] < cfg.sc.min_vol_ratio)
+
+    def weak_spread(t: int) -> bool:
+        return bool(spread[t] < max_spread * par_spread)
+
+    def toward(t: int) -> bool:
+        return bool(c[t] < c[t - 1] - _EPS)
+
+    out: list[dict[str, Any]] = []
+    k = max(ar.idx, ar.confirmed_idx) + 1
+    end = min(ar.idx + window, last)
+    while k <= end and k < fail:
+        a = atr_ref[k]
+        in_zone = base - below * a - _EPS <= bottom[k] <= base + above * a + _EPS
+        if not (in_zone and toward(k) and not locked[k] and (weak_volume(k) or weak_spread(k))):
+            k += 1
+            continue
+        lowest, conf, rej = float(bottom[k]), None, None
+        for t in range(k, min(k + rc.st_confirm_bars, last) + 1):
+            lowest = min(lowest, float(bottom[t]))
+            if bottom[t] < base - below * atr_ref[t] - _EPS:
+                rej = t, "deep"
+                break
+            if toward(t) and (locked[t] or not (weak_volume(t) or weak_spread(t))):
+                rej = t, "pressure"
+                break
+            if t > k and c[t] >= lowest + rc.st_reaction_atr * atr_ref[t] - _EPS:
+                conf = t
+                break
+        if conf is None and rej is None and k + rc.st_confirm_bars <= last:
+            rej = k + rc.st_confirm_bars, "no_reaction"
+        stop = conf if conf is not None else rej[0] if rej is not None else last
+        at = k + int(np.argmin(bottom[k:stop + 1]))
+        out.append({"k": k, "idx": at, "conf": conf, "rej": rej, "stop": stop, "low": sign * lowest,
+                    "volume_vs": round(float(volume[k:stop + 1].max() / par_vol), 3) if par_vol > 0 else None,
+                    "spread_vs": round(float(spread[k:stop + 1].max() / par_spread), 3) if par_spread > 0 else None,
+                    "vol_ratio": float(vr[k:stop + 1].max()), "zone_atr": round(float((bottom[at] - base) / atr_ref[at]), 3)})
+        if conf is None and rej is None:
+            break
+        k = max(stop + 1, k + gap)
+    return out
+
+
+def _st_events(
+    df: pd.DataFrame, ranges: list[TradingRange], scs: list[Event], distribution: list[Event], ars: list[Event], cfg: Config
+) -> tuple[list[Event], list[Event]]:
+    """ST theo định nghĩa 06/11/2026 (docs/event-definitions.md): (đã từng xác nhận, ứng viên chưa / không xác nhận). Có thể có nhiều ST cho một cao trào.
+    ST thất bại chỉ bác bỏ lần ST đó; SC, BC bị bác bỏ thì ST bị bác bỏ theo."""
+    dates = df.index
+    last = len(df) - 1
+    bcs, bc_failed = _bcs(distribution)
+    sc_by, bc_by = {f"{s.date:%Y-%m-%d}": s for s in scs}, {f"{b.date:%Y-%m-%d}": b for b in bcs}
+    why = {"deep": "xuyên sâu khỏi vùng kiểm tra", "no_reaction": "không có phản ứng giá", "pressure": "có áp lực tương đương cao trào"}
+
+    def range_at(i: int, known_at: int) -> int | None:
+        """Range chứa phiên i và đã được xác nhận tại phiên biết sự kiện: range xác nhận muộn hơn thì sự kiện chưa thuộc range đó."""
+        return next((r.range_id for r in reversed(ranges) if r.start_idx <= i and r.confirmed_idx <= known_at and (r.end_confirmed_idx is None or i <= r.end_confirmed_idx)), None)
+
+    confirmed: list[Event] = []
+    others: list[Event] = []
+    for ar in ars:
+        up = ar.kind == EventType.AR
+        day = ar.details["sc_date" if up else "bc_date"]
+        par = (sc_by if up else bc_by).get(day)
+        if par is None:
+            continue
+        name = "SC" if up else "BC"
+        gone: int | None = None if up else bc_failed.get(day)
+        if par.invalidated is not None:
+            gone = par.invalidated.idx if gone is None else min(gone, par.invalidated.idx)
+        for r in _st_tests(df, par, ar, "up" if up else "down", np.inf if gone is None else gone, cfg):
+            details: dict[str, Any] = {
+                "st_definition": "candidate_confirmed", "side": "accumulation" if up else "distribution", f"{name.lower()}_date": day,
+                f"volume_vs_{name.lower()}": r["volume_vs"], f"spread_vs_{name.lower()}": r["spread_vs"], "max_vol_ratio": r["vol_ratio"],
+                "test_price": round(r["low"], 4), f"{'low_vs_sc' if up else 'high_vs_bc'}_atr": r["zone_atr"], "test_bars": r["stop"] - r["k"] + 1,
+            }
+            kind = EventType.ST if up else EventType.ST_D
+            pending = StatusChange(EventStatus.CANDIDATE, r["k"], dates[r["k"]], f"quay lại vùng {name}, áp lực yếu hơn cao trào, chờ phản ứng")
+            if r["conf"] is None:
+                hist = [pending] + ([StatusChange(EventStatus.INVALIDATED, r["rej"][0], dates[r["rej"][0]], why[r["rej"][1]])] if r["rej"] else [])
+                others.append(_candidate(df, kind, r["idx"], range_at(r["idx"], r["k"]), details, hist))
+                continue
+            known = min(max(r["conf"], par.confirmed_idx, ar.confirmed_idx), last)
+            hist = [pending, StatusChange(EventStatus.CONFIRMED, known, dates[known], f"vùng {name} được bảo vệ, giá phản ứng, không có áp lực tương đương cao trào")]
+            if gone is not None:
+                at = max(int(gone), known)
+                hist.append(StatusChange(EventStatus.INVALIDATED, at, dates[at], f"{name} {vn_ts(par.date)} bị bác bỏ"))
+            confirmed.append(replace(_make_event(df, kind, r["idx"], known, range_at(r["idx"], known), details), history=tuple(hist)))
+    return confirmed, others
+
+
+def _log_redefined_assessments(
+    df: pd.DataFrame, log_events: list[Event], kinds: tuple[EventType, ...], new: list[Event], reason: str, assessments: dict[str, tuple[Verdict, ...]]
+) -> dict[str, tuple[Verdict, ...]]:
+    """Sự kiện của nhật ký đánh giá lại theo định nghĩa mới: cùng phiên -> lấy trạng thái mới; không đạt -> bác bỏ. Nhật ký và điểm tin cậy không đổi."""
+    out = dict(assessments)
+    by_key = {(e.kind, e.idx): e for e in new}
+    dates = df.index
+    for e in log_events:
+        if e.kind not in kinds:
+            continue
+        match = by_key.get((e.kind, e.idx))
+        at = e.confirmed_idx
+        out[e.event_id] = _from_history(match) if match is not None else (
+            Verdict(CONFIRMED, at, dates[at], "theo quy tắc nhật ký"), Verdict(REJECTED, at, dates[at], reason))
+    return out
+
+
 def _sc_children(df: pd.DataFrame, scs: list[Event], cfg: Config) -> list[Event]:
-    """PS, AR, ST của các SC đã xác nhận. Biết tại phiên xác nhận của chính nó, nhưng không sớm hơn SC; SC bị bác bỏ thì bác bỏ theo."""
-    ar = detect_ar(df, scs, cfg.ar)
-    items = detect_ps(df, scs, cfg.ps, decimals=cfg.indicators.ratio_decimals) + ar + detect_st(df, scs, ar, cfg.st)
+    """PS của các SC đã xác nhận. Biết tại phiên xác nhận của chính nó, nhưng không sớm hơn SC; SC bị bác bỏ thì bác bỏ theo."""
+    items = detect_ps(df, scs, cfg.ps, decimals=cfg.indicators.ratio_decimals)
     by_date = {f"{s.date:%Y-%m-%d}": s for s in scs}
     out = []
     for e in items:
@@ -1171,7 +1553,7 @@ def _range_verdicts(
         elif rng.exit_direction == "up":
             stop = min(x + rc.trend_watch_bars, last, next_range - 1)
         else:
-            stop = min(x + rc.spring_window, last, next_range - 1)
+            stop = _watch_stop(c, x, sup, res, rc.spring_window, min(last, next_range - 1))
         mid = (sup + res) / 2
         changes = np.abs(np.r_[0.0, np.diff(c)])
         absorb = (vr >= rc.acc_absorb_vol_ratio) & (c <= mid) & ((cp >= sc.min_close_pos) | (changes < 0.5 * np.nan_to_num(atr_ref)))
@@ -1293,8 +1675,8 @@ def _range_verdicts(
         if not hist:
             continue
         if level in (POTENTIAL, DEVELOPING):
-            if rng.exit_direction == "down" and stop < next_range - 1 and stop < last and not (hyp is not None and hyp.status_at(stop) == REJECTED):
-                hist.append(Verdict(REJECTED, stop, dates[stop], f"thoát xuống, không quay lại trong {rc.spring_window} phiên"))
+            if rng.exit_direction == "down" and stop < next_range - 1 and stop < last and c[stop] < sup - _EPS:
+                hist.append(Verdict(REJECTED, stop, dates[stop], f"thoát xuống, {rc.spring_window} phiên không close trong range"))
             elif next_range <= last:
                 hist.append(Verdict(REJECTED, next_range, dates[next_range], "range mới đã xác nhận, chưa đủ bằng chứng cầu"))
         if conf_at is not None:
@@ -1335,7 +1717,8 @@ def _range_verdicts(
                 leaning = "Distribution"
             else:
                 leaning = "chưa rõ"
-        out[rid] = RangeVerdict(rid, typ, start, max(end, start), tuple(hist), conds, supporting, demand_idx, leaning)
+        watch_end = dates[min(conf_at + rc.trend_watch_bars, last) if conf_at is not None else stop]
+        out[rid] = RangeVerdict(rid, typ, start, max(end, start), tuple(hist), conds, supporting, demand_idx, leaning, watch_end)
     return out
 
 
@@ -1406,7 +1789,7 @@ def _distribution_verdicts(
         elif rng.exit_direction == "up":
             stop = min(x + rc.acc_hold_bars, last, next_range - 1)
         else:
-            stop = min(x + rc.spring_window, last, next_range - 1)
+            stop = _watch_stop(c, x, sup, res, rc.spring_window, min(last, next_range - 1))
         below = next((j for j in range(rng.confirmed_idx, stop + 1) if c[j] < sup - _EPS), None)
 
         def evaluate(t: int) -> tuple[Condition, ...]:
@@ -1505,7 +1888,8 @@ def _distribution_verdicts(
                                    and e.confirmed_idx >= 0 and _final(assessments.get(e.event_id, (Verdict(CONFIRMED, 0, e.date),))) != REJECTED}))
         # Mốc pha D: phiên đầu tiên cung chiếm ưu thế sau khi TR xác nhận, không cần SOW
         d_mark = next((Verdict(DEVELOPING, v.idx, v.date).idx for v in hist if v.status == DEVELOPING), None)
-        out[rid] = RangeVerdict(rid, "Distribution", start, max(rng.end_idx, start), tuple(hist), conds, supporting, d_mark, leaning)
+        watch_end = dates[min(conf_at + rc.trend_watch_bars, last) if conf_at is not None else stop]
+        out[rid] = RangeVerdict(rid, "Distribution", start, max(rng.end_idx, start), tuple(hist), conds, supporting, d_mark, leaning, watch_end)
     return out
 
 
@@ -1669,14 +2053,16 @@ def _revise_phases(
             drop = (structure_ids == sid) & (phase == "A")
             phase[drop] = None
             reason[drop] = ""
-    spring_by = {e.range_id: e for e in springs if e.invalidated is None}
+    spring_by: dict[int | None, Event] = {}
+    for e in sorted((x for x in springs if x.invalidated is None), key=lambda x: x.idx):
+        spring_by.setdefault(e.range_id, e)
     n = len(series)
     for h in hyps:
         if h.stage != MARKDOWN or h.source != "range_exit" or h.status == CONFIRMED:
             continue
         marker = f"TR#{h.range_id} thoát xuống"
         sp = spring_by.get(h.range_id)
-        spring_reason = "" if sp is None else f"Spring kéo dài {vn_ts(sp.date)}, xác nhận {vn_ts(sp.confirmed_date)}: quay lại range với demand"
+        spring_reason = "" if sp is None else f"{_event_name(sp)} {vn_ts(sp.date)}, xác nhận {vn_ts(sp.confirmed_date)}: quay lại range"
         if sp is not None:
             for t in range(sp.idx, h.start_idx):   # các phiên đầu của cú thủng, trước phiên xác nhận thoát
                 if range_ids[t] == h.range_id and phase[t] in ("A", "B", "C"):
@@ -1714,30 +2100,47 @@ def build_revision(
     lps, lps_cands = _lps_events(df, ranges, events, swings, cfg)
     hyps = _trend_hypotheses(df, stages, ranges, events, swings, distribution, cfg, lps)
     scs_raw, sc_others = _selling_climaxes(df, stages, cfg)
-    springs, spring_cands = _extended_springs(df, ranges, hyps, scs_raw, cfg)
-    springs = _with_ids(springs, rng_by_id, "EXT")
+    springs, spring_cands, spring_tests = _springs(df, ranges, hyps, scs_raw, cfg)
+    springs = _with_ids(springs, rng_by_id, "V2")
+    spring_tests = _with_ids(spring_tests, rng_by_id, "V2")
     lps = _with_ids(lps, rng_by_id, "V2")
     lps_cands = _with_ids(lps_cands, rng_by_id, "V2C")
-    cands = _with_ids(spring_cands, rng_by_id, "EXT") + lps_cands
+    cands = _with_ids(spring_cands, rng_by_id, "V2C") + lps_cands
     # ID của ứng viên có thể trùng với sự kiện đã xác nhận khác phiên kết thúc: thêm hậu tố
     taken = {e.event_id for e in springs + lps}
     cands = [replace(c, event_id=f"{c.event_id}-C") if c.event_id in taken else c for c in cands]
     scs = _with_ids(scs_raw, rng_by_id, "V2")
+    ars_raw, ar_others = _ar_events(df, scs_raw, distribution, cfg)
+    ars = _with_ids(ars_raw, rng_by_id, "V2")
+    ar_others = _with_ids(ar_others, rng_by_id, "V2C")
     sc_children = _with_ids(_sc_children(df, scs_raw, cfg), rng_by_id, "V2")
+    sts_raw, st_others = _st_events(df, ranges, scs_raw, distribution, ars_raw, cfg)
+    sts = _with_ids(sts_raw, rng_by_id, "V2")
+    st_others = _with_ids(st_others, rng_by_id, "V2C")
     sc_others = _with_ids(sc_others, rng_by_id, "V2C")
-    everything = events + candidates + springs + lps + cands + distribution + scs + sc_children + sc_others
+    everything = events + candidates + springs + spring_tests + lps + cands + distribution + scs + sc_children + sc_others + ars + ar_others + sts + st_others
     assessments = _log_sc_assessments(df, events, scs, sc_others, _assess_all(df, everything, rng_by_id, cfg))
     assessments = _log_lps_assessments(df, events, lps, [c for c in cands if c.kind == EventType.LPS], assessments)
-    new_view = [e for e in events if e.kind != EventType.LPS] + lps + springs
+    assessments = _log_redefined_assessments(df, events + distribution, (EventType.AR, EventType.AR_D), ar_others + ars,
+                                             "không đạt định nghĩa AR: thiếu phản ứng biên độ lớn hoặc chưa rời vùng cao trào đủ xa", assessments)
+    assessments = _log_redefined_assessments(df, events, (EventType.SPRING,), [c for c in cands if c.kind == EventType.SPRING] + springs,
+                                             "không đạt định nghĩa Spring: không có dấu hiệu từ chối giá thấp hoặc không có phản ứng cầu", assessments)
+    assessments = _log_redefined_assessments(df, events, (EventType.TEST,), spring_tests,
+                                             "không đạt định nghĩa Spring Test", assessments)
+    assessments = _log_redefined_assessments(df, events + distribution, (EventType.ST, EventType.ST_D), st_others + sts,
+                                             "không đạt định nghĩa ST: không có phản ứng giá hoặc còn áp lực mạnh", assessments)
+    new_view = [e for e in events if e.kind not in (EventType.LPS, EventType.ST, EventType.SPRING, EventType.TEST)] + lps + springs + spring_tests + [e for e in sts if e.kind == EventType.ST]
     verdicts = _range_verdicts(df, ranges, stages, hyps, new_view, swings, scs, assessments, cfg)
-    dist_verdicts = _distribution_verdicts(df, ranges, stages, hyps, new_view, distribution, swings, assessments, verdicts, cfg)
+    dist_view = [e for e in distribution if e.kind != EventType.ST_D] + [e for e in sts if e.kind == EventType.ST_D]
+    dist_verdicts = _distribution_verdicts(df, ranges, stages, hyps, new_view, dist_view, swings, assessments, verdicts, cfg)
     primary = {r.range_id: _primary_verdict(verdicts.get(r.range_id), dist_verdicts.get(r.range_id))[0] for r in ranges}
-    series = _revise_phases(phases, hyps, springs, scs, assessments)
+    # Pha C trên đoạn range đã thoát: theo Spring sớm nhất có liên quan đến cú thoát
+    series = _revise_phases(phases, hyps, [e for e in springs if e.details.get("exit_date")], scs, assessments)
     # Range có đại diện là Distribution thì không vẽ pha Accumulation / Re-accumulation
     non_dist = {rid: v for rid, v in primary.items() if v is not None and not v.is_distribution}
     series = _accumulation_phases(df, series, ranges, non_dist, hyps, new_view + sc_children, scs, assessments, cfg)
     series = _distribution_phases(df, series, ranges, primary, new_view, distribution, assessments, cfg)
-    return RevisionResult(hypotheses=hyps, events=springs + lps + scs + sc_children, candidates=cands + sc_others, assessments=assessments,
+    return RevisionResult(hypotheses=hyps, events=springs + spring_tests + lps + scs + sc_children + ars + sts, candidates=cands + sc_others + ar_others + st_others, assessments=assessments,
                           phase_series=series, phase_segments=_segments(series),
                           labels={e.event_id: f"{_event_name(e)} {vn_ts(e.date)}" for e in everything},
                           range_verdicts=verdicts, distribution_verdicts=dist_verdicts)

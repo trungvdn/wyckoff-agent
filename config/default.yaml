@@ -229,7 +229,8 @@ backtest:
   rate_limit_retries: 3
 
 revision:                    # đánh giá lại tiềm năng / xác nhận / bác bỏ: chỉ ghi nhận, không đổi pha / tin cậy / backtest
-  mk_min_swings: 2           # Markup (docs/stage-definitions.md): HH-HL qua nhiều nhịp, tối thiểu 2 đỉnh và 2 đáy cao dần
+  mk_pivot_bars: 3           # Markup (docs/stage-definitions.md): đỉnh, đáy swing theo 3 phiên mỗi bên (biên range vẫn theo swings)
+  mk_min_swings: 2           #   HH-HL qua nhiều nhịp, tối thiểu 2 đỉnh và 2 đáy cao dần
   mk_base_lookback: 60       #   xu hướng theo SMA: nền giá là range kết thúc trong 60 phiên trước
   mk_extended_bars: 60       #   Extended Markup: từ 60 phiên sau breakout ...
   mk_extended_atr: 1.5       #   ... hoặc ATR gấp 1,5 lần lúc breakout
@@ -240,6 +241,14 @@ revision:                    # đánh giá lại tiềm năng / xác nhận / b�
   md_min_side_bars: 3        #   cần ít nhất 3 phiên tăng và 3 phiên giảm để so cung cầu
   demand_min_vol_ratio: 1.5  # phiên demand: nến tăng, volume >= 1.5x TB20, close_pos >= 0.7
   demand_min_close_pos: 0.7
+  spring_quick_bars: 4       # nhãn Spring hồi phục nhanh: lấy lại hỗ trợ trong 4 phiên, tính cả phiên thủng; lâu hơn là kéo dài
+  spring_max_bars: 15        # Spring (docs/event-definitions.md): phải lấy lại hỗ trợ trong 15 phiên, tính cả phiên thủng
+  spring_reaction_atr: 2.0   #   xác nhận bằng phản ứng: close cách đáy Spring tối thiểu 2 ATR
+  ar_min_spread_atr: 1.0     # AR (docs/event-definitions.md): phiên phản ứng có True Range từ 1 ATR
+  ar_min_close_pos: 0.5      #   đóng cửa ở nửa thuận chiều của phiên
+  ar_min_displacement_atr: 2.0   #   ứng viên: close rời đáy SC / đỉnh BC tối thiểu 2 ATR
+  st_reaction_atr: 1.0       # ST (docs/event-definitions.md): close phản ứng tối thiểu 1 ATR khỏi điểm kiểm tra
+  st_confirm_bars: 10        #   trong 10 phiên từ khi bắt đầu kiểm tra
   spring_window: 30          # Spring kéo dài: trong 30 phiên sau phiên xác nhận thoát xuống
   weak_break_vol_ratio: 1.0  #   chỉ mô tả: volume TB dưới support < 1.0x là thoát yếu
   lps_window: 20             # LPS (docs/event-definitions.md): điều chỉnh bắt đầu trong 20 phiên sau SOS hoặc SOS nội bộ
@@ -256,6 +265,8 @@ revision:                    # đánh giá lại tiềm năng / xác nhận / b�
   acc_absorb_vol_ratio: 1.5  #   hấp thụ cung: volume >= 1,5x TB20 ở nửa dưới range, giá không giảm tương ứng
   acc_hold_bars: 10          #   giữ hỗ trợ: tối thiểu 10 phiên sau breakout
   acc_demand_bars: 5         #   pha D không cần SOS: 5 phiên liên tiếp cầu chiếm ưu thế, ở nửa trên range, có đáy cao hơn
+  evidence_high: 0.7         #   mức bằng chứng cao: từ 70% điều kiện đạt; độ đầy đủ, không phải xác suất
+  evidence_medium: 0.5       #   mức bằng chứng trung bình: từ 50%
   sc_max_undercut_atr: 1.0   # SC (docs/event-definitions.md): close không thấp hơn đáy ứng viên quá 1 ATR
   sc_confirm_window: 10      #   phản ứng tăng mạnh hoặc ổn định trong 10 phiên
   sc_reaction_atr: 2.0       #   phản ứng tăng mạnh: close >= đáy vùng + 2 ATR

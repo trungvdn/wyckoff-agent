@@ -75,6 +75,317 @@ def test_markdown_rejected_when_close_returns_to_support() -> None:
     assert not any(v.status == CONFIRMED for v in h.history)
 
 
+def _rebreak_closes(bars_below: int) -> list[float]:
+    """Thoát xuống, quay lại range, rồi thủng lần nữa `bars_below` phiên."""
+    return _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 20.5, 20.6, 20.7, 20.6, 20.5, 20.6] + [18.8 - 0.1 * i for i in range(bars_below)]
+
+
+def test_markdown_reopens_when_support_breaks_again() -> None:
+    res = analyze(_frame(_rebreak_closes(4)), _cfg())
+    h = res.revision.hypothesis_of_range(_exit_range(res).range_id)
+    assert [v.status for v in h.history] == [POTENTIAL, REJECTED, POTENTIAL]
+    assert h.status_at(h.history[1].idx) == REJECTED and h.status == POTENTIAL
+    assert "thủng lại" in h.reason
+    assert any(c["status"] == POTENTIAL and "thủng lại" in c["reason"] for c in res.revision.changes())
+
+
+def test_markdown_stays_rejected_when_second_break_is_short() -> None:
+    res = analyze(_frame(_rebreak_closes(2) + [20.5, 20.6, 20.5, 18.8, 18.7] + [20.5]), _cfg())
+    h = res.revision.hypothesis_of_range(_exit_range(res).range_id)
+    assert [v.status for v in h.history] == [POTENTIAL, REJECTED]
+
+
+def test_reopened_markdown_is_rejected_again_on_return() -> None:
+    res = analyze(_frame(_rebreak_closes(4) + [20.5, 20.6]), _cfg())
+    h = res.revision.hypothesis_of_range(_exit_range(res).range_id)
+    assert [v.status for v in h.history] == [POTENTIAL, REJECTED, POTENTIAL, REJECTED]
+
+
+def _reaction_setup(after_climax: list[float], flip: bool = False):
+    """Đi ngang rồi cao trào ở phiên 40, sau đó `after_climax`. `flip`: lật giá thành phía BC."""
+    from wyckoff.detectors.events import _make_event
+    from wyckoff.indicators.core import add_indicators
+
+    closes = [20.0] * 40 + [20.0] + after_climax
+    if flip:
+        closes = [40.0 - x for x in closes]
+    cfg = _cfg()
+    df = add_indicators(_frame(closes), cfg.indicators)
+    return df, _make_event(df, EventType.BC if flip else EventType.SC, 40, 40, None, {}), cfg
+
+
+def test_ar_confirmed_on_completed_swing_after_strong_reaction() -> None:
+    from wyckoff.revision import _ar_reactions
+
+    df, sc, cfg = _reaction_setup([20.0, 20.1, 21.5, 22.0, 22.4, 22.2, 22.1, 22.0, 21.9, 21.8])
+    r = _ar_reactions(df, [sc], "up", cfg)[0]
+    assert r["t0"] == 43 and r["peak"] == 45 and r["conf"] == 48     # không nằm ngay phiên sau cao trào; pivot 3 phiên
+    assert r["rej"] is None
+
+
+def test_ar_stays_candidate_until_swing_completes() -> None:
+    from wyckoff.revision import _ar_reactions
+
+    df, sc, cfg = _reaction_setup([20.0, 20.1, 21.5, 22.0, 22.4])
+    r = _ar_reactions(df, [sc], "up", cfg)[0]
+    assert r["t0"] == 43 and r["conf"] is None and r["rej"] is None
+
+
+def test_mild_recovery_is_not_ar() -> None:
+    from wyckoff.revision import _ar_reactions
+
+    df, sc, cfg = _reaction_setup([20.02 + 0.01 * i for i in range(15)] + [20.1] * 30)
+    assert _ar_reactions(df, [sc], "up", cfg) == []
+
+
+def test_ar_rejected_when_climax_zone_is_lost_before_swing() -> None:
+    from wyckoff.revision import _ar_reactions
+
+    df, sc, cfg = _reaction_setup([20.0, 20.1, 21.5, 22.0, 22.4, 17.0, 16.5, 16.0, 15.5])
+    r = _ar_reactions(df, [sc], "up", cfg)[0]
+    assert r["conf"] is None and r["rej"][1] == "lost"
+
+
+def test_distribution_ar_mirrors_accumulation_ar() -> None:
+    from wyckoff.revision import _ar_reactions
+
+    after = [20.0, 20.1, 21.5, 22.0, 22.4, 22.2, 22.1, 22.0, 21.9, 21.8]
+    up, down = _reaction_setup(after), _reaction_setup(after, flip=True)
+    a, b = _ar_reactions(up[0], [up[1]], "up", up[2])[0], _ar_reactions(down[0], [down[1]], "down", down[2])[0]
+    assert (a["t0"], a["peak"], a["conf"]) == (b["t0"], b["peak"], b["conf"])
+
+
+def test_ar_events_store_range_bound_and_follow_parent() -> None:
+    from dataclasses import replace as dc_replace
+
+    from wyckoff.detectors.models import StatusChange
+    from wyckoff.revision import _ar_events
+
+    df, sc, cfg = _reaction_setup([20.0, 20.1, 21.5, 22.0, 22.4, 22.2, 22.1, 22.0, 21.9, 21.8])
+    (ar,), others = _ar_events(df, [sc], [], cfg)
+    assert not others and ar.kind == EventType.AR and ar.details["ar_high"] == df["high"].iloc[45]
+    assert ar.details["sc_low"] == df["low"].iloc[40] and ar.history[0].status == EventStatus.CANDIDATE
+    gone = dc_replace(sc, history=sc.history + (StatusChange(EventStatus.INVALIDATED, 47, df.index[47], "x"),))
+    (ar2,), _ = _ar_events(df, [gone], [], cfg)
+    assert ar2.history[-1].status == EventStatus.INVALIDATED and ar2.history[-1].idx == 48
+
+
+def _st_setup(tail: list[float], overrides: dict[int, float] | None = None, flip: bool = False, floor_at: int | None = None):
+    """Cao trào phiên 40 (volume x4), AR đỉnh phiên 47, rồi `tail` từ phiên 51. `flip`: lật giá thành phía BC."""
+    from wyckoff.detectors.events import _make_event
+    from wyckoff.indicators.core import add_indicators
+
+    closes = [20.0] * 40 + [19.0, 19.2, 19.3, 21.0, 21.6, 22.0, 22.3, 22.5, 22.3, 22.2, 22.1] + tail
+    if flip:
+        closes = [40.0 - x for x in closes]
+    cfg = _cfg()
+    df = add_indicators(_frame(closes, overrides={40: 4.0, **(overrides or {})}), cfg.indicators)
+    kind, ar_kind = (EventType.BC, EventType.AR_D) if flip else (EventType.SC, EventType.AR)
+    par = _make_event(df, kind, 40, 40, None, {})
+    ar = _make_event(df, ar_kind, 47, 50, None, {("bc_date" if flip else "sc_date"): f"{df.index[40]:%Y-%m-%d}"})
+    if floor_at is not None:
+        df["floor_locked"] = False
+        df.iloc[floor_at, df.columns.get_loc("floor_locked")] = True
+    return df, par, ar, cfg
+
+
+_ST_TAIL = [21.5, 20.8, 20.2, 19.6, 19.3, 19.2, 19.4, 19.9, 20.6, 21.0, 21.2]
+
+
+def test_st_confirmed_when_zone_holds_and_price_reacts() -> None:
+    from wyckoff.revision import _st_tests
+
+    df, par, ar, cfg = _st_setup(_ST_TAIL)
+    r = _st_tests(df, par, ar, "up", np.inf, cfg)[0]
+    assert r["conf"] is not None and r["rej"] is None and r["idx"] <= r["conf"]
+    assert r["volume_vs"] < 0.7 and r["stop"] - r["k"] >= 1      # kiểm tra có thể kéo dài nhiều phiên
+
+
+def test_st_is_optional_and_needs_return_to_zone() -> None:
+    from wyckoff.revision import _st_tests
+
+    df, par, ar, cfg = _st_setup([21.9, 22.0, 21.8, 22.1] * 5)    # không quay lại vùng SC
+    assert _st_tests(df, par, ar, "up", np.inf, cfg) == []
+
+
+def test_st_rejected_on_climax_like_pressure_or_floor_lock() -> None:
+    from wyckoff.revision import _st_tests
+
+    i = 51 + 5
+    df, par, ar, cfg = _st_setup(_ST_TAIL, overrides={i: 4.0})
+    df.iloc[i, df.columns.get_loc("high")] = df["high"].iloc[i] + 3.0      # biên độ rộng hơn cao trào, volume như cao trào
+    assert _st_tests(df, par, ar, "up", np.inf, cfg)[0]["rej"][1] == "pressure"
+    df2, par2, ar2, cfg2 = _st_setup(_ST_TAIL, floor_at=i)
+    assert _st_tests(df2, par2, ar2, "up", np.inf, cfg2)[0]["rej"][1] == "pressure"
+
+
+def test_st_rejected_when_zone_is_pierced_deep_or_no_reaction() -> None:
+    from wyckoff.revision import _st_tests
+
+    df, par, ar, cfg = _st_setup([21.5, 20.8, 20.2, 19.6, 19.3, 16.0, 15.8])
+    assert _st_tests(df, par, ar, "up", np.inf, cfg)[0]["rej"][1] == "deep"
+    df, par, ar, cfg = _st_setup([21.5, 20.8, 20.2, 19.6, 19.3] + [19.3] * 14)
+    assert _st_tests(df, par, ar, "up", np.inf, cfg)[0]["rej"][1] == "no_reaction"
+
+
+def test_failed_st_does_not_invalidate_parent_and_later_st_possible() -> None:
+    from wyckoff.revision import _st_tests
+
+    tail = [21.5, 20.8, 20.2, 19.6, 19.3] + [19.3] * 14 + [21.0, 21.5, 21.8, 21.2, 20.5, 19.9, 19.4, 19.3, 19.9, 20.6, 21.0]
+    df, par, ar, cfg = _st_setup(tail)
+    res = _st_tests(df, par, ar, "up", np.inf, cfg)
+    assert res[0]["rej"][1] == "no_reaction" and any(r["conf"] is not None for r in res[1:])
+
+
+def test_distribution_st_mirrors_accumulation_st() -> None:
+    from wyckoff.revision import _st_tests
+
+    up = _st_setup(_ST_TAIL)
+    down = _st_setup(_ST_TAIL, flip=True)
+    a = _st_tests(*up[:3], "up", np.inf, up[3])[0]
+    b = _st_tests(*down[:3], "down", np.inf, down[3])[0]
+    assert (a["k"], a["conf"], a["rej"]) == (b["k"], b["conf"], b["rej"])
+
+
+def test_st_events_follow_parent_rejection() -> None:
+    from dataclasses import replace as dc_replace
+
+    from wyckoff.detectors.models import StatusChange
+    from wyckoff.revision import _st_events
+
+    df, par, ar, cfg = _st_setup(_ST_TAIL)
+    (st, *_), _ = _st_events(df, [], [par], [], [ar], cfg)
+    assert st.kind == EventType.ST and st.details["st_definition"] and st.history[0].status == EventStatus.CANDIDATE
+    known = st.confirmed_idx
+    gone = dc_replace(par, history=par.history + (StatusChange(EventStatus.INVALIDATED, known + 1, df.index[known + 1], "x"),))
+    (st2, *_), _ = _st_events(df, [], [gone], [], [ar], cfg)
+    assert st2.history[-1].status == EventStatus.INVALIDATED
+
+
+def test_multi_bar_spring_marked_at_session_with_lowest_high() -> None:
+    res, found = _dip([19.8, 19.6, 19.3, 19.7, 20.4, 20.5], overrides={4: 3.0})
+    e = found[0]
+    assert e.details["recovery_bars"] == 5 and e.idx == len(_DIP_HEAD) + 2     # high thấp nhất, không phải phiên xuyên đầu tiên
+    assert e.details["penetration_date"] == f"{res.df.index[len(_DIP_HEAD)]:%Y-%m-%d}"
+    assert e.details["lowest_low"] == res.df["low"].iloc[len(_DIP_HEAD):len(_DIP_HEAD) + 5].min()
+
+
+def test_spring_test_follows_spring_rejection() -> None:
+    res, found = _dip([19.7, 19.7, 19.7, 20.1, 20.0, 20.0, 20.1, 18.0, 17.5, 17.0], overrides={0: 3.0})
+    assert res.revision.status_of(found[0]) == REJECTED
+    t = next(x for x in res.revision.events if x.kind == EventType.TEST and x.details.get("spring_date") == f"{found[0].date:%Y-%m-%d}")
+    assert res.revision.status_of(t) == REJECTED
+
+
+def _second_dip(recover_at: int, volume_mult: float = 3.0) -> pd.DataFrame:
+    """Thoát xuống, quay lại range, low lại thủng support 20 và hồi ở phiên thứ `recover_at`, tính cả phiên thủng."""
+    head = _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 20.5, 20.6, 20.7, 20.6, 20.5, 20.6]
+    dip = [19.7] * (recover_at - 1) + [20.8]
+    closes = head + dip + [20.8, 20.7]
+    return _frame(closes, overrides={len(head) + recover_at - 1: volume_mult})
+
+
+def _quick(res) -> list:
+    return [e for e in res.revision.events if e.details.get("spring_type") == "quick"]
+
+
+def test_quick_spring_confirmed_on_recovery_with_demand() -> None:
+    res = analyze(_second_dip(4), _cfg())
+    found = _quick(res)
+    assert len(found) == 1
+    e = found[0]
+    assert e.kind == EventType.SPRING and e.details["recovery_bars"] == 4 and e.details["bars_below_support"] == 3
+    assert res.revision.status_of(e) == CONFIRMED
+    assert res.revision.assessments[e.event_id][0].status == POTENTIAL
+
+
+def test_spring_speed_label_follows_bars_to_reclaim() -> None:
+    assert not _quick(analyze(_second_dip(5), _cfg()))              # quá 4 phiên: nhãn kéo dài
+    late = [e for e in analyze(_second_dip(5), _cfg()).revision.events if e.kind == EventType.SPRING and e.details["spring_type"] == "extended"]
+    assert late and late[-1].details["recovery_bars"] == 5
+
+
+_DIP_HEAD = _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 20.5, 20.6, 20.7, 20.6, 20.5, 20.6]
+
+
+def _dip(after: list[float], overrides: dict[int, float] | None = None):
+    """Cú xuyên support 20 sau khi range đã thoát rồi quay lại; `overrides`: vị trí trong `after` -> bội số volume."""
+    frame = _frame(_DIP_HEAD + after, overrides={len(_DIP_HEAD) + i: m for i, m in (overrides or {}).items()})
+    res = analyze(frame, _cfg())
+    b = len(_DIP_HEAD)
+    return res, [e for e in res.revision.events + res.revision.candidates if e.kind == EventType.SPRING and e.idx >= b]
+
+
+def test_spring_fails_without_demand_reaction_after_reclaim() -> None:
+    _, found = _dip([19.7, 19.7, 19.7] + [20.1] * 18)
+    assert len(found) == 1 and "không có phản ứng cầu" in found[0].history[-1].reason
+
+
+def test_spring_candidate_stays_open_until_reaction() -> None:
+    res, found = _dip([19.7, 19.7, 19.7, 20.1])
+    assert len(found) == 1 and res.revision.status_of(found[0]) == POTENTIAL
+
+
+def test_spring_fails_when_support_not_reclaimed_or_new_low() -> None:
+    _, found = _dip([19.7] * 16)
+    assert found and found[0].history[-1].status == EventStatus.INVALIDATED
+    _, found = _dip([19.7, 19.7, 19.7, 20.1, 19.0, 19.0])
+    assert found and "đáy mới" in found[0].history[-1].reason
+
+
+def test_plain_breakdown_is_not_spring() -> None:
+    _, found = _dip([19.6, 19.2, 18.8, 18.4, 18.0, 17.6, 17.2])    # đóng cửa gần đáy liên tục, không từ chối giá thấp
+    assert not found
+
+
+def test_high_volume_spring_is_valid_and_confirmed_by_test() -> None:
+    res, found = _dip([19.7, 19.7, 19.7, 20.1, 20.0, 20.0], overrides={0: 3.0})
+    e = found[0]
+    assert res.revision.status_of(e) == CONFIRMED and e.details["volume_profile"] == "cao" and e.details["confirmation"].startswith("Test")
+    assert [t for t in res.revision.events if t.kind == EventType.TEST and t.details.get("spring_date") == f"{e.date:%Y-%m-%d}"]
+
+
+def test_quick_spring_rejected_when_close_breaks_low() -> None:
+    df = _second_dip(4)
+    tail = df.iloc[[-1]].copy()
+    tail.index = pd.bdate_range(df.index[-1] + pd.offsets.BDay(1), periods=1)
+    tail[["open", "high", "low", "close"]] = [20.7, 20.7, 17.5, 17.6]
+    res = analyze(pd.concat([df, tail]), _cfg())
+    e = _quick(res)[0] if _quick(res) else None
+    assert e is not None and res.revision.status_of(e) == REJECTED
+
+
+def test_range_box_extends_to_last_bar_while_structure_is_current() -> None:
+    from wyckoff.agent.payload import build_payload
+    from wyckoff.web.viewmodel import build_view
+
+    res = analyze(_second_dip(4), _cfg())
+    rid = res.reopened_range_id()
+    assert rid == _exit_range(res).range_id
+    view = build_view(res, build_payload(res, "X"), "X", "1D")
+    box = next(r for r in view["ranges"] if r["id"] == rid)
+    assert box["i1"] == len(res.df) - 1 and box["active"] is False
+    assert any(c["kind"] == "Spring" and c["status"] == CONFIRMED and c["i"] == _quick(res)[0].idx for c in view["chart_events"])
+    assert any("hồi phục nhanh" in x["text"] for x in view["events"])
+
+
+def test_range_box_stops_when_markdown_stands() -> None:
+    res = analyze(_frame(_rebreak_closes(4)), _cfg())    # Markdown được mở lại, còn đứng
+    assert res.reopened_range_id() is None
+
+
+def test_watch_window_counts_from_last_close_in_range() -> None:
+    from wyckoff.revision import _watch_stop
+
+    c = np.array([19.0] * 5 + [20.5] * 3 + [19.0] * 20)      # support 20, resistance 22; trong range ở phiên 5, 6, 7
+    assert _watch_stop(c, 2, 20.0, 22.0, 4, len(c) - 1) == 11      # 7 + 4
+    assert _watch_stop(c[:5], 2, 20.0, 22.0, 2, 4) == 4            # không quay lại: x + 2
+    assert _watch_stop(np.array([19.0] * 40), 2, 20.0, 22.0, 30, 39) == 32
+    assert _watch_stop(c, 2, 20.0, 22.0, 4, 9) == 9                # không vượt giới hạn
+    above = np.array([19.0, 20.5] + [23.0] * 20)                   # trên resistance không được tính là trong range
+    assert _watch_stop(above, 0, 20.0, 22.0, 4, 21) == 5
+
+
 def _downtrend(start: float = 19.6, legs: int = 5) -> tuple[list[float], list[float]]:
     """Giảm từng nhịp: phiên giảm volume cao, nhịp hồi ngắn volume thấp. Trả về (close, bội số volume)."""
     closes: list[float] = []
@@ -164,10 +475,9 @@ def test_extended_spring_needs_demand_and_confirms_at_recovery() -> None:
     springs = [e for e in res.revision.events if e.details.get("spring_type") == "extended"]
     assert len(springs) == 1
     sp = springs[0]
-    assert sp.kind == EventType.SPRING and sp.confirmed_idx == recovery and sp.idx < n + 3
-    assert sp.details["breakdown"] in ("yếu", "mạnh")
+    assert sp.kind == EventType.SPRING and sp.confirmed_idx == recovery and sp.idx == n + 3    # phiên có high thấp nhất
     assert res.revision.status_of(sp) == CONFIRMED
-    assert sp.event_id.endswith("-EXT")
+    assert sp.event_id.endswith("-V2")
     # Biểu đồ hồi cứu: không còn vô hiệu do thoát xuống, về pha C từ phiên hồi
     ph = res.revision.phase_series["phase"]
     assert ph.iloc[recovery] == "C" and ph.iloc[recovery - 1] == "C" and ph.iloc[sp.idx] == "C"
@@ -175,12 +485,11 @@ def test_extended_spring_needs_demand_and_confirms_at_recovery() -> None:
     assert res.phases.series["phase"].iloc[recovery] == "invalid"   # nhật ký giữ nguyên
 
 
-def test_no_extended_spring_without_demand() -> None:
+def test_spring_confirmed_by_strong_reaction_without_demand_bar() -> None:
     closes = _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 19.3, 20.8, 21.0, 21.1, 21.0, 21.1, 21.0, 21.1]
-    res = analyze(_frame(closes), _cfg())   # volume đều: không có phiên demand
-    assert not [e for e in res.revision.events if e.details.get("spring_type") == "extended"]
-    assert [e for e in res.revision.candidates if e.details.get("spring_type") == "extended"]
-    assert (res.revision.phase_series["phase"] == "potential").any()   # không có Spring: vùng vẫn là chờ
+    res = analyze(_frame(closes), _cfg())   # volume đều: không có phiên demand, nhưng giá phản ứng mạnh
+    sp = [e for e in res.revision.events if e.details.get("spring_type") == "extended"]
+    assert sp and "phản ứng tăng" in sp[0].details["confirmation"]
 
 
 def _phases(res) -> list[str]:
@@ -272,6 +581,43 @@ def test_markup_confirmed_through_several_swings() -> None:
     met = {c.key: c.met for c in h.conditions}
     assert met["hh_hl_multi"] and met["support"] and met["dominance"] and met["maintained"]
     assert h.state in ("Established Markup", "Extended Markup")
+
+
+def _staircase_frame() -> pd.DataFrame:
+    """Như MSB: tăng theo bậc thang, mỗi nhịp điều chỉnh chỉ 3 phiên."""
+    base = DECLINE + _range_closes()
+    closes: list[float] = []
+    mult: list[float] = []
+    p = 22.6
+    for _ in range(8):
+        for _ in range(5):
+            p += 0.3
+            closes.append(p)
+            mult.append(1.8)
+        for _ in range(3):
+            p -= 0.12
+            closes.append(p)
+            mult.append(0.6)
+    return _frame(base + closes, overrides={len(base) + i: m for i, m in enumerate(mult)})
+
+
+def test_staircase_markup_confirmed_with_short_pivots() -> None:
+    """Nhịp điều chỉnh ngắn: pivot 3 phiên thấy được HH-HL, pivot 5 phiên thì bỏ sót."""
+    df = _staircase_frame()
+    cfg = _cfg()
+    assert CONFIRMED in [v.status for v in _markup(analyze(df, cfg)).history]
+    long_pivot = replace(cfg, revision=replace(cfg.revision, mk_pivot_bars=5))
+    assert CONFIRMED not in [v.status for v in _markup(analyze(df, long_pivot)).history]
+
+
+def test_markup_pivot_setting_does_not_change_ranges() -> None:
+    """Pivot của Markup không ảnh hưởng biên range và nhật ký."""
+    df = _staircase_frame()
+    cfg = _cfg()
+    a = analyze(df, cfg)
+    b = analyze(df, replace(cfg, revision=replace(cfg.revision, mk_pivot_bars=5)))
+    assert [(r.start_idx, r.support, r.resistance) for r in a.ranges] == [(r.start_idx, r.support, r.resistance) for r in b.ranges]
+    pd.testing.assert_series_equal(a.phases.series["phase"], b.phases.series["phase"])
 
 
 def test_few_strong_sessions_are_not_markup() -> None:
@@ -874,7 +1220,7 @@ def test_view_carries_status_and_revised_segments() -> None:
     res = analyze(_frame(closes, overrides={n + 8: 3.0}), _cfg())
     payload = build_payload(res, "X")
     view = build_view(res, payload, "X", "1D")
-    assert payload["payload_version"] == "9"
+    assert payload["payload_version"] == "10"
     assert {e["status"] for e in view["chart_events"]} <= {POTENTIAL, CONFIRMED, REJECTED}
     assert not any(g["phase"] == "potential" for g in view["phase_segments"])   # đã có Spring: không còn vùng chờ
     assert any(g["phase"] == "C" for g in view["phase_segments"])
@@ -886,6 +1232,48 @@ def test_view_carries_status_and_revised_segments() -> None:
     assert gone["view"] == "transition" and gone["strength"] is None and gone["reason"] == "close quay lại"
     maybe = stage_view(cur, [], {"status": POTENTIAL, "reason": "chờ"})
     assert maybe["view"] == "trend" and maybe["title"] == "Markdown tiềm năng"
+
+
+def test_view_shows_live_structure_with_evidence_level() -> None:
+    from wyckoff.web.viewmodel import stage_view
+
+    cur = {"range_id": None, "stage": "Markdown", "candidates": [], "structure_type": "Trending Down", "reason": "x", "strength": None}
+    rejected = {"status": REJECTED, "reason": "close quay lại support"}
+    live = {"range_id": 1, "level": DEVELOPING, "structure_type": "Initial Accumulation", "watch_end": "2026-11-19",
+            "evidence": {"met": 4, "total": 8, "level": "trung bình"}}
+    v = stage_view(cur, [], rejected, live)
+    assert v["view"] == "range" and v["title"] == "Accumulation đang hình thành"
+    assert v["evidence"]["level"] == "trung bình" and v["reason"] == "close quay lại support"
+    assert stage_view(cur, [], rejected, {**live, "level": CONFIRMED})["title"] == "Initial Accumulation"
+    # Trong range: tên cấu trúc thay cho danh sách giả thuyết
+    in_range = {**cur, "range_id": 1, "stage": None, "candidates": ["Accumulation", "Distribution"]}
+    assert stage_view(in_range, [], None, live)["title"] == "Accumulation đang hình thành"
+    assert stage_view(in_range, [], None, None)["title"] == "Accumulation hoặc Distribution"
+    # Xu hướng còn đứng thì giai đoạn là xu hướng đó, không phải cấu trúc
+    up = stage_view({**cur, "stage": "Markup"}, [], {"status": CONFIRMED, "reason": "y"}, live)
+    assert up["view"] == "trend" and up["title"] == "Markup" and up["evidence"] is None
+
+
+def test_evidence_level_is_share_of_conditions_met() -> None:
+    from wyckoff.revision import Condition, RangeVerdict
+
+    def level(met: int, total: int = 8) -> str:
+        conds = tuple(Condition(str(i), "x", i < met, "") for i in range(total))
+        return RangeVerdict(1, "Accumulation", 0, 1, (), conds).evidence(_cfg().revision)["level"]
+
+    assert [level(n) for n in (3, 4, 5, 6)] == ["thấp", "trung bình", "trung bình", "cao"]
+
+
+def test_live_structure_expires_after_watch_window() -> None:
+    from wyckoff.revision import RangeVerdict, RevisionResult, Verdict
+
+    day = pd.Timestamp("2026-10-01")
+    end = pd.Timestamp("2026-11-19")
+    v = RangeVerdict(1, "Accumulation", 0, 1, (Verdict(DEVELOPING, 0, day, "r"),), watch_end=end)
+    rv = RevisionResult([], [], [], {}, pd.DataFrame(), [], range_verdicts={1: v})
+    assert rv.live_structure(1, end) is v
+    assert rv.live_structure(1, end + pd.Timedelta(days=1)) is None   # bằng chứng đã ngừng cập nhật: không còn là hiện tại
+    assert rv.live_structure(None, end) is None
 
 
 def test_view_overlays_accumulation_segment() -> None:
