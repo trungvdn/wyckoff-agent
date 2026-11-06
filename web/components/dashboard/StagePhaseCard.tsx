@@ -76,21 +76,35 @@ function DistributionPhase({ phase: d }: { phase: NonNullable<StageInfo["distrib
 /** Trong range: giả thuyết giai đoạn và pha theo cả hai sơ đồ. */
 function RangeBody({ stage, phase: p, confidence: c }: { stage: StageInfo; phase: PhaseInfo; confidence: Confidence }) {
   const area = p.support != null && p.resistance != null ? ` Vùng ${fmtPrice(p.support)} – ${fmtPrice(p.resistance)}.` : "";
+  const leftRange = stage.range_id == null;
   return (
     <>
       <p className="m-0 text-[13px] text-muted">
-        Chưa chốt{stage.prior_stage ? `, sau ${stage.prior_stage}` : ""}. Nhãn chỉ chốt khi range thoát.
+        {leftRange ? (
+          `${stage.structure_type}: ${stage.reason}.`
+        ) : (
+          <>
+            Chưa chốt{stage.prior_stage ? `, sau ${stage.prior_stage}` : ""}. Nhãn chỉ chốt khi range thoát.
+          </>
+        )}
       </p>
+      {stage.evidence && (
+        <p className="m-0 text-[13px] text-muted">
+          Mức bằng chứng là độ đầy đủ của các điều kiện, không phải xác suất về hướng giá: tỷ lệ xác nhận theo mức này gần bằng dữ liệu xáo trộn.
+        </p>
+      )}
       <div className="flex flex-col gap-3 border-t border-line pt-3">
         <div className="flex items-end justify-between gap-3">
           <div className="flex-1">
-            <p className="m-0 text-[13px] text-muted">Nếu là tích lũy</p>
+            <p className="m-0 text-[13px] text-muted">{stage.evidence && stage.market.state === "Accumulation" ? "Pha tích lũy" : "Nếu là tích lũy"}</p>
             <p className="m-0 text-[22px] leading-tight font-bold tracking-tight">{p.title}</p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <span className={cx(PILL, CONFIDENCE_STYLE[c.level] ?? "border-line-strong text-muted")}>
-              {c.score == null ? "Tin cậy: không áp dụng" : `Tin cậy ${c.level}`}
-            </span>
+            {(c.score != null || !stage.evidence) && (
+              <span className={cx(PILL, CONFIDENCE_STYLE[c.level] ?? "border-line-strong text-muted")}>
+                {c.score == null ? "Tin cậy: không áp dụng" : `Tin cậy ${c.level}`}
+              </span>
+            )}
             {c.score != null && (
               <span className="font-mono text-xs text-muted">
                 điểm {c.score > 0 ? "+" : ""}
@@ -229,6 +243,11 @@ export function StagePhaseCard({ stage: s, phase, confidence }: { stage: StageIn
           {s.title}
         </p>
         {s.strength && <span className={cx(PILL, strengthStyle(s.strength))}>{s.strength.headline}</span>}
+        {s.evidence && (
+          <span className={cx(PILL, CONFIDENCE_STYLE[s.evidence.level])}>
+            Bằng chứng {s.evidence.level} · {s.evidence.met}/{s.evidence.total}
+          </span>
+        )}
       </div>
       {!inRange && (
         <p className="m-0 font-mono text-xs text-muted">
@@ -248,7 +267,7 @@ export function StagePhaseCard({ stage: s, phase, confidence }: { stage: StageIn
       )}
       {s.accumulation && <AccumulationEvidence acc={s.accumulation} />}
       {s.distribution && <AccumulationEvidence acc={s.distribution} />}
-      {s.last_resolved && (
+      {s.last_resolved && !(s.evidence && s.range_id == null) && (
         <p className="m-0 text-[13px] text-muted">
           Range gần nhất: TR#{s.last_resolved.range_id} là {s.last_resolved.label} ({fmtDate(s.last_resolved.date)}).
         </p>

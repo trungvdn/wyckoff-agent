@@ -261,6 +261,7 @@ class RevisionConfig:
     """Lớp đánh giá lại (wyckoff/revision.py): tiềm năng -> xác nhận -> bác bỏ, dùng dữ liệu về sau để sửa nhãn trên biểu đồ.
     Chỉ ghi nhận, không đổi pha / tin cậy / backtest. Ngưỡng là khám phá trên mẫu H8, chưa phải kiểm định."""
     # Markup (docs/stage-definitions.md)
+    mk_pivot_bars: int = 3            # đỉnh, đáy swing của Markup: 3 phiên mỗi bên (biên range vẫn theo `swings`)
     mk_min_swings: int = 2            # HH-HL qua nhiều nhịp: tối thiểu 2 đỉnh và 2 đáy cao dần
     mk_base_lookback: int = 60        # xu hướng theo SMA: nền giá là range kết thúc trong 60 phiên trước
     mk_extended_bars: int = 60        # Extended Markup: từ 60 phiên sau breakout ...
@@ -276,6 +277,14 @@ class RevisionConfig:
     demand_min_close_pos: float = 0.7
     # Spring kéo dài: thoát xuống rồi quay lại với demand
     spring_window: int = 30           # tối đa 30 phiên sau phiên xác nhận thoát
+    spring_quick_bars: int = 4        # Spring hồi phục nhanh: hồi với demand trong 4 phiên, tính cả phiên thủng
+    # AR (docs/event-definitions.md): cửa sổ và pivot theo ar.window, ar.pivot_bars; phía BC theo distribution
+    ar_min_spread_atr: float = 1.0    # phiên phản ứng: biên độ (True Range) từ 1 ATR
+    ar_min_close_pos: float = 0.5     # phiên phản ứng: đóng cửa ở nửa thuận chiều của phiên
+    ar_min_displacement_atr: float = 2.0   # ứng viên: close rời đáy SC / đỉnh BC tối thiểu 2 ATR
+    # ST (docs/event-definitions.md): vùng, volume, biên độ theo st và distribution
+    st_reaction_atr: float = 1.0      # xác nhận: close phản ứng tối thiểu 1 ATR khỏi điểm kiểm tra
+    st_confirm_bars: int = 10         # trong 10 phiên từ khi bắt đầu kiểm tra
     weak_break_vol_ratio: float = 1.0 # chỉ để mô tả: volume TB dưới support < 1.0 x TB20 là "thoát yếu"
     # LPS (docs/event-definitions.md)
     lps_window: int = 20              # điều chỉnh bắt đầu trong 20 phiên sau SOS hoặc SOS nội bộ
@@ -294,6 +303,8 @@ class RevisionConfig:
     acc_absorb_vol_ratio: float = 1.5 # hấp thụ cung: phiên volume >= 1,5x TB20 ở nửa dưới range, giá không giảm tương ứng
     acc_hold_bars: int = 10           # giữ hỗ trợ: tối thiểu 10 phiên sau breakout không sâu quá lps_max_depth dưới resistance
     acc_demand_bars: int = 5          # pha D không cần SOS: 5 phiên liên tiếp cầu chiếm ưu thế, ở nửa trên range, có đáy cao hơn
+    evidence_high: float = 0.7        # mức bằng chứng cao: tỷ lệ điều kiện đạt từ 70%; đây là độ đầy đủ, không phải xác suất
+    evidence_medium: float = 0.5      # mức bằng chứng trung bình: từ 50%
     # SC (docs/event-definitions.md): ngưỡng nhận diện ứng viên dùng chung với `sc`
     sc_max_undercut_atr: float = 1.0  # sau ứng viên, close không được thấp hơn đáy ứng viên quá 1 ATR
     sc_confirm_window: int = 10       # phản ứng tăng mạnh hoặc ổn định trong 10 phiên

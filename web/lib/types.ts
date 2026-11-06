@@ -107,6 +107,7 @@ export interface StageInfo {
   } | null; // mức Accumulation / Re-accumulation của range hiện tại
   distribution: StageInfo["accumulation"]; // mức Distribution của range hiện tại, xét song song với Re-accumulation
   market: { state: string | null; structure: string | null; leaning: string | null }; // Market State tách khỏi Market Structure
+  evidence: { met: number; total: number; level: "cao" | "trung bình" | "thấp" } | null; // độ đầy đủ của bằng chứng, không phải xác suất
   structure_type: string;
   strength: TrendStrength | null;
   note: string | null; // lưu ý từ kết quả kiểm định khi có pha C trong range

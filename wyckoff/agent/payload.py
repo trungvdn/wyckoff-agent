@@ -20,7 +20,8 @@ from wyckoff.pipeline import AnalysisResult
 from wyckoff.stages import MARKDOWN
 from wyckoff.strength import STRONG, WEAK, TrendStrength
 
-PAYLOAD_VERSION = "9"   # v9 (05/11/2026): revision (tiềm năng / xác nhận / bác bỏ, chỉ ghi nhận); stage_history.revision_status
+PAYLOAD_VERSION = "10"  # v10 (06/11/2026): revision.structure, cấu trúc còn hiệu lực kèm mức bằng chứng
+# v9 (05/11/2026): revision (tiềm năng / xác nhận / bác bỏ, chỉ ghi nhận); stage_history.revision_status
 
 
 def _r(x: Any, d: int = 2) -> Any:
@@ -144,12 +145,19 @@ def _revision_block(result: AnalysisResult, range_id: int | None) -> dict[str, A
     if rng is not None:
         own += [e for e in rv.events if e.kind == EventType.SC and rv.status_of(e) == "confirmed"
                 and rng.start_date - pd.Timedelta(days=45) <= e.date <= rng.confirmed_date]
+        # AR, ST của cao trào mở cấu trúc thuộc cấu trúc dù chưa gắn với range nào
+        own += [e for e in rv.events if e.kind in (EventType.AR, EventType.AR_D, EventType.ST, EventType.ST_D) and rv.status_of(e) == "confirmed"
+                and rng.start_date - pd.Timedelta(days=45) <= pd.Timestamp(e.details.get("sc_date") or e.details["bc_date"]) <= rng.confirmed_date]
+    stage = result.current_stage()
+    live = result.live_structure()
     return {
         "trend": None if hyp is None else hyp.to_dict(),
+        "structure": None if live is None else {"range_id": live.range_id, "level": live.status, "structure_type": live.structure_type,
+                                                "watch_end": _date(live.watch_end), "evidence": live.evidence(result.cfg.revision)},
         "range_structure": (lambda v: None if v is None else v.structure_type)(rv.accumulation_of(range_id)),
         "accumulation": (lambda v: None if v is None else v.to_dict())(rv.range_verdicts.get(range_id)),
         "distribution": (lambda v: None if v is None else v.to_dict())(rv.distribution_verdicts.get(range_id)),
-        "market": rv.market_view(result.current_stage().range_id, result.current_stage().range_id is not None, last_date),
+        "market": rv.market_view(stage.range_id if live is None else live.range_id, stage.range_id is not None or live is not None, last_date),
         "phase": {"phase": None if pd.isna(row["phase"]) else row["phase"], "reason": row["reason"],
                   "since": _date(seg.start_date) if seg is not None else None},
         "events": [{**_event_dict(i, e), "assessment": rv.status_of(e)} for i, e in enumerate(own)],
