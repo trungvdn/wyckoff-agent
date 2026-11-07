@@ -23,6 +23,7 @@ Công sức (S, M, L) là ước lượng sơ bộ, chưa thiết kế chi tiế
 | 16 | Trang thị trường | `/thi-truong`: xu hướng VN-Index, điều kiện của xu hướng và điều kiện đảo chiều, lợi suất 20/60/120 phiên, mức giảm so với đỉnh, biểu đồ có khối lượng; menu trái dùng chung ([spec](handoff-dashboard.md#trang-thị-trường)) | 07/11/2026 | [#7](https://github.com/trungvdn/wyckoff-agent/pull/7) |
 | 12 | Danh mục nắm giữ | `/danh-muc`: thêm, sửa, xóa mã; lãi/lỗ, giai đoạn, pha, thay đổi so với hôm qua (gồm #2), khoảng cách tới các mức giá; lưu bằng SQLite cục bộ ([spec](handoff-dashboard.md#danh-mục-nắm-giữ)) | 07/11/2026 | [#8](https://github.com/trungvdn/wyckoff-agent/pull/8) |
 | 13 | Quy tắc bán do người dùng đặt | Quy tắc theo giá vốn, mức giá, đường trung bình và cấu trúc Wyckoff; tách chốt lãi và chốt lỗ, ghi rõ đạt, gần đạt hay chưa kèm con số, có kiểu "Đạt là đủ" ([spec](handoff-dashboard.md#quy-tắc-bán)). Khối "Thay đổi so với hôm qua" đã bỏ khỏi trang, API vẫn trả `changes` cho #17 và #6 | 07/11/2026 | [#9](https://github.com/trungvdn/wyckoff-agent/pull/9) |
+| 6 | Cảnh báo Telegram | Job sau phiên báo khi đủ điều kiện chốt lãi, chốt lỗ, gần đạt, đổi giai đoạn hoặc pha; không báo lặp, chạy bù; nút chuông bật/tắt theo mã và nút Gửi thông báo trên trang danh mục ([hướng dẫn](alerts.md)). Chưa làm email | 07/11/2026 | [#10](https://github.com/trungvdn/wyckoff-agent/pull/10) |
 
 ## Tiếp theo
 
@@ -34,7 +35,6 @@ Xếp theo thứ tự làm.
 | 1 | Trình quét toàn thị trường | Job sau 15:00 lưu trạng thái mọi mã; trang bảng lọc theo giai đoạn, pha, mức tin cậy, RS, khoảng cách tới mức xác nhận/vô hiệu | M–L | Nơi lưu lịch sử trạng thái |
 | 15 | Bộ lọc đã lưu và kiểm thử | Lưu tiêu chí, lọc thanh khoản, bỏ mã đang giữ; mỗi bộ lọc có kết quả lịch sử so với nền | M | #1, #12 |
 | 17 | Trang "Hôm nay" | Trang chủ gom thị trường, quy tắc bán vừa đạt, thay đổi trong danh mục, mã mới khớp bộ lọc | S–M | #12, #13, #15, #16 |
-| 6 | Cảnh báo Telegram hoặc email | Báo khi quy tắc bán đạt hoặc đổi pha; chỉ mô tả, không khuyến nghị | S–M | #13 |
 | 7 | Độ rộng thị trường và ngành | Mở rộng #16: tỷ lệ mã ở từng giai đoạn, RS theo ngành | M | #1, #16 |
 | 5 | Tua lại theo thời gian | Xem hệ thống nói gì tại một ngày bất kỳ, so với nhãn đã đánh giá lại | M | – |
 | 8 | Agent hội thoại nhiều lượt | Nhớ ngữ cảnh, so sánh được nhiều mã | M | – |
