@@ -8,7 +8,7 @@ Mã nguồn: API `wyckoff/web/` (FastAPI, `python serve.py`); giao diện `web/`
 | Thành phần | File | Loại |
 |---|---|---|
 | Layout gốc: font, Sidebar, Header, Footer, StatusProvider | `app/layout.tsx` | Server |
-| Sidebar (skip link, logo, menu Thị trường / Cổ phiếu) | `components/layout/Sidebar.tsx` | Client: đọc đường dẫn |
+| Sidebar (skip link, logo, menu Thị trường / Danh mục / Lọc cổ phiếu / Cổ phiếu) | `components/layout/Sidebar.tsx` | Client: đọc đường dẫn |
 | Header (ô mã và khung thời gian ở trang cổ phiếu, pill trạng thái) | `components/layout/Header.tsx` | Client: đọc mã / khung từ URL |
 | Footer (dòng miễn trừ) | `components/layout/Footer.tsx` | Server |
 | Card, CardHeader, Eyebrow / Button / Skeleton | `components/ui/*` | Dùng chung |
@@ -168,11 +168,13 @@ Không cuộn ngang ở 375px (đã kiểm tra).
 | POST | `/api/alerts/send` | `{confirm: true}`: gửi tình trạng hiện tại qua Telegram ([hướng dẫn](alerts.md)) |
 | POST | `/api/rules` | `{symbol, kind, value}`; 409 nếu trùng, 404 nếu mã chưa có trong danh mục |
 | PUT, DELETE | `/api/rules/{id}` | Sửa `{kind, value}` hoặc xóa một quy tắc |
+| GET | `/api/scan`, `/api/scan/status`; POST `/api/scan`, `/api/scan/stop` | Lọc cổ phiếu: kết quả quét, chạy quét nền ([chi tiết](screener.md#api)) |
+| GET, POST, PUT, DELETE | `/api/filters`, `/api/filters/{id}` | Bộ lọc đã lưu |
 | GET | `/api/quote/{symbol}` | Giá đóng cửa gần nhất: `{symbol, close, as_of}` |
 | GET | `/api/explanation/{symbol}?tf=` | Diễn giải (LLM / cache / theo mẫu) theo schema prompt v4 |
 | POST | `/api/ask` | `{symbol, timeframe, question}` → `{answer, event_ids, source, model, errors}` |
 
-OpenAPI: `/api/docs`. Cấu hình qua biến môi trường `WYCKOFF_CONFIG`, `WYCKOFF_CACHE_DIR`, `WYCKOFF_OUT_DIR`, `WYCKOFF_PORTFOLIO_DB`,
+OpenAPI: `/api/docs`. Cấu hình qua biến môi trường `WYCKOFF_CONFIG`, `WYCKOFF_CACHE_DIR`, `WYCKOFF_OUT_DIR`, `WYCKOFF_PORTFOLIO_DB`, `WYCKOFF_SCANNER_DB`,
 `WYCKOFF_MODEL`, `WYCKOFF_NO_LLM`, `WYCKOFF_NO_MARKET`, `WYCKOFF_TTL_S`, `WYCKOFF_DEFAULT_SYMBOL`; LLM cần `ANTHROPIC_API_KEY`.
 
 ## Trang thị trường
@@ -227,6 +229,10 @@ Nằm trên trang `/danh-muc`, logic ở `wyckoff/portfolio.py`, giao diện ở
 | "Đạt từ" | Phiên đầu của chuỗi đạt liên tục đến nay, không sớm hơn ngày mua. Mức vô hiệu tính theo mức của phiên cuối vì không lưu mức của các phiên trước |
 | "Vừa đạt" | Quy tắc giá: chuỗi đạt dài 1 phiên. Quy tắc giai đoạn: phiên trước chưa đạt. Không lưu lịch sử; giá quay lại thì về "Chưa đạt" |
 | Form | Chọn mã, loại, giá trị, xem trước qua `/api/rules/preview` trước khi lưu. Sửa không đổi được mã; xóa có bước xác nhận; xóa một mã thì xóa luôn quy tắc của mã đó |
+
+## Lọc cổ phiếu
+
+Đường dẫn `/loc-co-phieu`; điều kiện lọc, cách quét và API ở [screener.md](screener.md).
 
 ## Chưa làm (cần quyết định trước khi mở ra Internet)
 

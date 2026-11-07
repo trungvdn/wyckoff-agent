@@ -400,3 +400,85 @@ export interface RuleCatalogGroup {
   group: string;
   kinds: { kind: string; label: string; value_label?: string | null; default_value?: number; value_hint?: string; line?: string; fixed_side?: "profit" | "loss" }[];
 }
+
+// Lọc cổ phiếu (wyckoff/scanner.py). Mỗi mã một dòng mô tả trạng thái tại phiên cuối; lọc làm ở trình duyệt.
+export type StageGroup = "Accumulation" | "Re-accumulation" | "Markup" | "Distribution" | "Re-distribution" | "Markdown" | "unclear";
+export type StageStatus = "confirmed" | "developing" | "potential";
+
+export interface ScanEvent {
+  kind: string;
+  date: string;
+  status: string; // confirmed | potential
+  ago: number; // số phiên tính tới phiên cuối của mã
+}
+
+export interface ScanRow {
+  symbol: string;
+  as_of: string;
+  close: number;
+  day_pct: number | null;
+  value20: number; // GTGD trung bình 20 phiên, tỷ đồng
+  vol20: number;
+  vol_ratio: number | null; // KL phiên cuối so với trung bình
+  stage: string;
+  stage_group: StageGroup;
+  stage_status: StageStatus | null;
+  stage_age: number | null;
+  phase: string | null; // A-E, invalid, potential
+  phase_title: string;
+  phase_since: string | null;
+  phase_age: number | null;
+  confidence: string | null;
+  confidence_rank: number; // 0 không áp dụng, 1 thấp, 2 trung bình, 3 cao
+  events: ScanEvent[];
+  confirm_pct: number | null;
+  invalidate_pct: number | null;
+  invalidate_breached: boolean;
+  range_pos: number | null;
+  target_pct: number | null;
+  sma_fast_pct: number | null;
+  sma_slow_pct: number | null;
+  ema_up: boolean | null;
+  ret20: number | null;
+  ret60: number | null;
+  rs20: number | null;
+  rs60: number | null;
+  high52_pct: number | null;
+  held: boolean;
+}
+
+export interface ScanProgress {
+  running: boolean;
+  total: number;
+  done: number;
+  current: string | null;
+  waiting: string | null;
+  failed: { symbol: string; reason: string }[];
+  started: string | null;
+  finished: string | null;
+  elapsed_s: number;
+  eta_s: number | null;
+  stopped: boolean;
+  as_of: string | null;
+  error: string | null;
+}
+
+export interface ScanData {
+  as_of: string | null;
+  finished: string | null;
+  universe: number;
+  rows: ScanRow[];
+  failed: { symbol: string; reason: string }[];
+  sessions: string[];
+  held: string[];
+  job: ScanProgress;
+  notices: string[];
+  sma_periods: [number, number];
+}
+
+export interface SavedFilter<F = unknown> {
+  id: number;
+  name: string;
+  filters: F;
+  updated: string;
+}

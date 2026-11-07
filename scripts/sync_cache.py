@@ -18,42 +18,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from wyckoff.config import Config, load_config  # noqa: E402
-from wyckoff.data.cache import cache_path, load_cache  # noqa: E402
-from wyckoff.data.fetcher import vnstock_index_source  # noqa: E402
-from wyckoff.data.loader import get_ohlcv, warmup_start, with_rate_limit_retry  # noqa: E402
-from wyckoff.service import DEFAULT_START  # noqa: E402
+from wyckoff.data.cache import cache_path  # noqa: E402
+from wyckoff.service import cached_symbols, index_symbols, is_index, update_symbol  # noqa: E402,F401
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "v3.yaml"
-SUFFIX = "_1D.csv"
-
-
-def index_symbols(cfg: Config) -> set[str]:
-    return set(cfg.market.benchmarks.values())
-
-
-def is_index(symbol: str, cfg: Config) -> bool:
-    # VNSMALLCAP nằm trong cache từ kiểm định H1, không thuộc danh sách chỉ số so sánh
-    return symbol in index_symbols(cfg) or symbol == "VNSMALLCAP"
-
-
-def cached_symbols(cache_dir: Path) -> list[str]:
-    return sorted(p.name[: -len(SUFFIX)] for p in cache_dir.glob(f"*{SUFFIX}"))
 
 
 def update(symbols: list[str], cache_dir: Path, cfg: Config) -> list[str]:
     """Cập nhật tăng dần từng mã; lỗi một mã không dừng cả lượt. Trả về các mã lỗi."""
     failed = []
     for i, symbol in enumerate(symbols, 1):
-        cached = load_cache(cache_path(cache_dir, symbol))
-        # Giữ nguyên độ phủ đang có để không tải lại toàn bộ lịch sử
-        start = (f"{cached.index[0]:%Y-%m-%d}" if cached is not None and not cached.empty
-                 else warmup_start(DEFAULT_START["1D"], cfg.data.warmup_bars))
-        kw = {}
-        if is_index(symbol, cfg):
-            kw = {"check_limits": False, "source_fn": vnstock_index_source(
-                cfg.market.index_source, cfg.data.chunk_days, cfg.data.coverage_tolerance_days)}
         try:
-            with_rate_limit_retry(lambda: get_ohlcv(symbol, start, cache_dir=cache_dir, cfg=cfg.data, **kw))
+            update_symbol(symbol, cfg, cache_dir=cache_dir)
             print(f"[{i}/{len(symbols)}] {symbol}: xong")
         except Exception as exc:  # noqa: BLE001 - ghi nhận rồi sang mã tiếp theo
             failed.append(symbol)

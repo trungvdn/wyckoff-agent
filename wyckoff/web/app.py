@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import asdict
@@ -21,8 +22,9 @@ from wyckoff.agent.llm import LLMClient
 from wyckoff.alerts import AlertSendError, current_summary, split_message, telegram_from_env
 from wyckoff.portfolio import (DuplicateHolding, DuplicateRule, Holding, PortfolioStore, Rule, evaluate_rule,
                                normalize_rule_side, normalize_rule_value, validate_rule)
+from wyckoff.scanner import DuplicateFilter, ScanJob, ScanStore
 from wyckoff.service import TIMEFRAMES, DataUnavailable
-from wyckoff.web.store import AnalysisStore, Settings, default_client_factory, load_app_config
+from wyckoff.web.store import AnalysisStore, Settings, default_client_factory, load_app_config, scan_runner
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{3,10}$")
 UNSUPPORTED_TF = {"15m": "15 phút", "1H": "Giờ"}
@@ -51,6 +53,18 @@ class AlertToggle(BaseModel):
 class SendAlert(BaseModel):
     # Bắt buộc có thân JSON: trang web khác không gửi được yêu cầu này nếu không qua kiểm tra CORS
     confirm: Literal[True]
+
+
+class FilterFields(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    filters: dict[str, Any]
+
+
+class StartScan(BaseModel):
+    confirm: Literal[True]
+
+
+MAX_FILTER_JSON = 4000
 
 
 class RuleFields(BaseModel):
@@ -87,6 +101,9 @@ def create_app(settings: Settings | None = None,
     app = FastAPI(title="Wyckoff Agent", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
     app.state.store = store
     holdings = PortfolioStore(settings.portfolio_db)
+    scans = ScanStore(settings.scanner_db)
+    scan_job = ScanJob(scans, scan_runner(settings, cfg))
+    app.state.scan_job = scan_job
 
     def holding(symbol: str, body: HoldingFields) -> Holding:
         if body.bought_on > datetime.now(ZoneInfo(cfg.data.timezone)).date():
@@ -192,6 +209,75 @@ def create_app(settings: Settings | None = None,
             raise HTTPException(502, str(exc)) from None
         holdings.log_alert(summary["as_of"], summary["text"])
         return {"sent": True, "enabled_count": summary["enabled_count"]}
+
+    def filter_fields(body: FilterFields) -> tuple[str, dict[str, Any]]:
+        name = " ".join(body.name.split())
+        if not name:
+            raise HTTPException(422, "Cần đặt tên cho bộ lọc.")
+        if len(json.dumps(body.filters)) > MAX_FILTER_JSON:
+            raise HTTPException(422, "Bộ lọc quá lớn.")
+        return name, body.filters
+
+    @app.get("/api/scan")
+    def scan(as_of: date | None = None) -> dict[str, Any]:
+        """Kết quả quét (mặc định phiên mới nhất). Lọc làm ở giao diện; `held` đánh dấu mã đang giữ."""
+        data = scans.scan(as_of.isoformat() if as_of else None)
+        if data is None and as_of is not None:
+            raise HTTPException(404, f"Không có lượt quét phiên {as_of:%d/%m/%Y}.")
+        held_symbols = {h.symbol for h in holdings.list()}
+        notices = ["Máy chủ không tự cập nhật giá: quét trên dữ liệu đã đồng bộ."] if cfg.data.offline else []
+        base = {"sessions": scans.sessions(), "held": sorted(held_symbols), "job": scan_job.progress.as_dict(),
+                "notices": notices, "sma_periods": [cfg.market.sma_fast, cfg.market.sma_slow]}
+        if data is None:
+            return {**base, "as_of": None, "rows": [], "failed": [], "universe": 0, "finished": None}
+        rows = [{**r, "held": r["symbol"] in held_symbols} for r in data["rows"]]
+        return {**base, **data, "rows": rows}
+
+    @app.post("/api/scan", status_code=202)
+    def start_scan(body: StartScan) -> dict[str, Any]:
+        if not scan_job.start():
+            raise HTTPException(409, "Đang có một lượt quét chạy.")
+        return scan_job.progress.as_dict()
+
+    @app.get("/api/scan/status")
+    def scan_status() -> dict[str, Any]:
+        return scan_job.progress.as_dict()
+
+    @app.post("/api/scan/stop")
+    def stop_scan() -> dict[str, Any]:
+        if not scan_job.stop():
+            raise HTTPException(409, "Không có lượt quét nào đang chạy.")
+        return scan_job.progress.as_dict()
+
+    @app.get("/api/filters")
+    def list_filters() -> list[dict[str, Any]]:
+        return [asdict(f) for f in scans.filters()]
+
+    @app.post("/api/filters", status_code=201)
+    def add_filter(body: FilterFields) -> dict[str, Any]:
+        name, filters = filter_fields(body)
+        try:
+            return asdict(scans.add_filter(name, filters))
+        except DuplicateFilter as exc:
+            raise HTTPException(409, str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    @app.put("/api/filters/{filter_id}")
+    def update_filter(filter_id: int, body: FilterFields) -> dict[str, Any]:
+        name, filters = filter_fields(body)
+        try:
+            saved = scans.update_filter(filter_id, name, filters)
+        except DuplicateFilter as exc:
+            raise HTTPException(409, str(exc)) from None
+        if saved is None:
+            raise HTTPException(404, "Bộ lọc không còn tồn tại.")
+        return asdict(saved)
+
+    @app.delete("/api/filters/{filter_id}", status_code=204)
+    def delete_filter(filter_id: int) -> None:
+        if not scans.delete_filter(filter_id):
+            raise HTTPException(404, "Bộ lọc không còn tồn tại.")
 
     @app.get("/api/rules/preview")
     def preview_rule(symbol: str, kind: str, value: float | None = None, side: Literal["profit", "loss"] | None = None) -> dict[str, Any]:

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from typing import Any
+from pathlib import Path
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -28,6 +29,41 @@ class DataUnavailable(RuntimeError):
     def __init__(self, message: str, status: int = 502) -> None:
         super().__init__(message)
         self.status = status
+
+
+CACHE_SUFFIX = "_1D.csv"
+
+
+def index_symbols(cfg: Config) -> set[str]:
+    return set(cfg.market.benchmarks.values())
+
+
+def is_index(symbol: str, cfg: Config) -> bool:
+    # VNSMALLCAP nằm trong cache từ kiểm định H1, không thuộc danh sách chỉ số so sánh
+    return symbol in index_symbols(cfg) or symbol == "VNSMALLCAP"
+
+
+def cached_symbols(cache_dir: str | Path) -> list[str]:
+    """Mọi mã (kể cả chỉ số) đang có file nến ngày trong cache."""
+    return sorted(p.name[: -len(CACHE_SUFFIX)] for p in Path(cache_dir).glob(f"*{CACHE_SUFFIX}"))
+
+
+def update_symbol(symbol: str, cfg: Config, *, cache_dir: str | Path = "cache",
+                  on_wait: Callable[[int, float, Exception], None] | None = None) -> None:
+    """Cập nhật tăng dần nến ngày của một mã vào cache; hết hạn mức theo phút thì chờ rồi thử lại."""
+    from wyckoff.data.cache import cache_path, load_cache
+    from wyckoff.data.fetcher import vnstock_index_source
+    from wyckoff.data.loader import with_rate_limit_retry
+
+    cached = load_cache(cache_path(Path(cache_dir), symbol))
+    # Giữ nguyên độ phủ đang có để không tải lại toàn bộ lịch sử
+    start = (f"{cached.index[0]:%Y-%m-%d}" if cached is not None and not cached.empty
+             else warmup_start(DEFAULT_START["1D"], cfg.data.warmup_bars))
+    kw: dict[str, Any] = {}
+    if is_index(symbol, cfg):
+        kw = {"check_limits": False, "source_fn": vnstock_index_source(
+            cfg.market.index_source, cfg.data.chunk_days, cfg.data.coverage_tolerance_days)}
+    with_rate_limit_retry(lambda: get_ohlcv(symbol, start, cache_dir=Path(cache_dir), cfg=cfg.data, **kw), on_wait=on_wait)
 
 
 def resample_weekly(ohlcv: pd.DataFrame) -> pd.DataFrame:
@@ -110,21 +146,35 @@ def load_market_overview(cfg: Config, *, cache_dir: str = "cache", refresh: bool
     return {"symbol": bench, **market_overview(idx, cfg.market, ind.vol_ma_period, (ind.ema_fast, ind.ema_slow))}
 
 
+def prepare_index(cfg: Config, *, start: str, cache_dir: str = "cache") -> tuple[pd.DataFrame, AnalysisResult, str]:
+    """Chỉ số so sánh đã phân tích, để dùng lại cho nhiều mã (job quét thị trường)."""
+    from wyckoff.market import benchmark_for
+
+    bench = benchmark_for(cfg.data.exchange, cfg.market)
+    idx = load_index(bench, cfg, start=start, cache_dir=cache_dir)
+    return idx, analyze(idx, cfg), bench
+
+
 def load_market(result: AnalysisResult, symbol: str, cfg: Config, *, start: str, end: str | None = None,
-                cache_dir: str = "cache", refresh: bool = False, demo: bool = False):
-    """Tải chỉ số so sánh, chạy detector trên chỉ số, dựng bối cảnh thị trường. Lỗi -> (None, None, None)."""
+                cache_dir: str = "cache", refresh: bool = False, demo: bool = False,
+                index: tuple[pd.DataFrame, AnalysisResult, str] | None = None):
+    """Tải chỉ số so sánh, chạy detector trên chỉ số, dựng bối cảnh thị trường. Lỗi -> (None, None, None).
+    `index`: kết quả của `prepare_index` khi đã có sẵn."""
     from wyckoff.agent.payload import current_structure_events
     from wyckoff.market import benchmark_for, build_market_context
 
     try:
-        bench = benchmark_for(cfg.data.exchange, cfg.market)
-        if demo:
-            from wyckoff.synthetic import make_market_index
-
-            idx = make_market_index(result.df.index)
+        if index is not None:
+            idx, idx_res, bench = index
         else:
-            idx = load_index(bench, cfg, start=start, end=end, cache_dir=cache_dir, refresh=refresh)
-        idx_res = analyze(idx, cfg)
+            bench = benchmark_for(cfg.data.exchange, cfg.market)
+            if demo:
+                from wyckoff.synthetic import make_market_index
+
+                idx = make_market_index(result.df.index)
+            else:
+                idx = load_index(bench, cfg, start=start, end=end, cache_dir=cache_dir, refresh=refresh)
+            idx_res = analyze(idx, cfg)
         cur = idx_res.current()
         ref = {"phase": cur.phase, "since": None if cur.since is None else f"{cur.since:%Y-%m-%d}", "reason": cur.reason,
                "note": "tham khảo – ngưỡng detector chưa hiệu chỉnh cho chỉ số"}
