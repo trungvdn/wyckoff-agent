@@ -7,8 +7,9 @@ Mã nguồn: API `wyckoff/web/` (FastAPI, `python serve.py`); giao diện `web/`
 
 | Thành phần | File | Loại |
 |---|---|---|
-| Layout gốc: font, skip link, Header, Footer, StatusProvider | `app/layout.tsx` | Server |
-| Header (logo, ô mã, khung thời gian, pill trạng thái) | `components/layout/Header.tsx` | Client: đọc mã / khung từ URL |
+| Layout gốc: font, Sidebar, Header, Footer, StatusProvider | `app/layout.tsx` | Server |
+| Sidebar (skip link, logo, menu Thị trường / Cổ phiếu) | `components/layout/Sidebar.tsx` | Client: đọc đường dẫn |
+| Header (ô mã và khung thời gian ở trang cổ phiếu, pill trạng thái) | `components/layout/Header.tsx` | Client: đọc mã / khung từ URL |
 | Footer (dòng miễn trừ) | `components/layout/Footer.tsx` | Server |
 | Card, CardHeader, Eyebrow / Button / Skeleton | `components/ui/*` | Dùng chung |
 | Dashboard (lưới 2/3 – 1/3, hàng dưới) | `components/dashboard/Dashboard.tsx` | Server |
@@ -41,7 +42,8 @@ mọi số hiển thị lấy từ API.
 
 ## Layout
 
-- Container: `max-width: 1384px` (1440 − 2 × 28), căn giữa, padding `24px 28px 32px`, khoảng cách khối `--sp-5` (20px).
+- Menu: cột trái rộng 220px, cố định khi cuộn, từ 1280px trở lên; hẹp hơn thì thành logo và hai tab ở đầu trang.
+- Container nội dung: `max-width: 1384px`, căn giữa phần còn lại, padding `24px 28px 32px`, khoảng cách khối `--sp-5` (20px).
 - Hàng chính: grid `minmax(0,2fr) minmax(0,1fr)`: biểu đồ (≈2/3) | cột phải (Pha hiện tại, Sự kiện).
 - Hàng dưới: grid `minmax(0,1fr) minmax(0,1.6fr)`: Kịch bản | Hỏi Agent.
 - Cột phải: flex dọc, thẻ Sự kiện `flex: 1` để đáy thẳng hàng với thẻ biểu đồ.
@@ -156,11 +158,25 @@ Không cuộn ngang ở 375px (đã kiểm tra).
 |---|---|---|
 | GET | `/api/health` | Trạng thái, LLM có sẵn không, mã mặc định |
 | GET | `/api/analysis/{symbol}?tf=1D\|1W&refresh=` | View model: `bars`, `view_from`, `ranges`, `chart_events`, `phase`, `confidence`, `events`, `levels`, `target`, `market`, `notices`, `warnings` |
+| GET | `/api/market?refresh=` | Trang thị trường: `close`, `change_pct`, `trend`, `conditions`, `returns`, `drawdown`, `bars`, `trend_segments`, `notices` |
 | GET | `/api/explanation/{symbol}?tf=` | Diễn giải (LLM / cache / theo mẫu) theo schema prompt v4 |
 | POST | `/api/ask` | `{symbol, timeframe, question}` → `{answer, event_ids, source, model, errors}` |
 
 OpenAPI: `/api/docs`. Cấu hình qua biến môi trường `WYCKOFF_CONFIG`, `WYCKOFF_CACHE_DIR`, `WYCKOFF_OUT_DIR`,
 `WYCKOFF_MODEL`, `WYCKOFF_NO_LLM`, `WYCKOFF_NO_MARKET`, `WYCKOFF_TTL_S`, `WYCKOFF_DEFAULT_SYMBOL`; LLM cần `ANTHROPIC_API_KEY`.
+
+## Trang thị trường
+
+Đường dẫn `/thi-truong`, mã nguồn `app/thi-truong/` và `components/market/`, số liệu từ `market_overview` (`wyckoff/market.py`). Trang không có ô nhập mã; muốn phân tích một mã thì vào menu Cổ phiếu.
+
+| Khối | Nội dung | Ghi chú |
+|---|---|---|
+| Tóm tắt | Điểm chỉ số, thay đổi phiên, nhãn xu hướng, ngày bắt đầu và số phiên | Thiếu lịch sử: "Chưa đủ dữ liệu", ẩn hai thẻ điều kiện |
+| Bốn ô số | Lợi suất 20/60/120 phiên; giảm so với đỉnh 250 phiên | Đỉnh tính theo `high`, cùng định nghĩa với bối cảnh thị trường ở trang cổ phiếu |
+| Biểu đồ | Nến, SMA20 (chỉ để vẽ, không thuộc quy tắc xu hướng), SMA50, SMA200, dấu đỉnh, khối lượng (xanh/đỏ theo nến) kèm TB20, dải xu hướng dưới cùng | Mặc định 1N, 6T khi vùng vẽ hẹp hơn 560px; không có logo nổi vì che dải xu hướng, ghi công TradingView bằng dòng chữ có link |
+| Thẻ điều kiện | Giảm: "Vì sao là xu hướng giảm" và "Điều kiện đảo chiều tăng" kèm khoảng cách và mốc gần nhất. Tăng: đối xứng. Đi ngang: điều kiện của cả hai chiều | Đây là quy tắc đặt nhãn của `market_regime`, trang ghi rõ chưa phải tín hiệu đã kiểm định |
+
+Chưa đưa pha Wyckoff của chỉ số vào trang vì ngưỡng detector chưa hiệu chỉnh cho chỉ số. `WYCKOFF_NO_MARKET` hoặc `market.enabled: false`: API trả 404, trang hiện thông báo lỗi.
 
 ## Chưa làm (cần quyết định trước khi mở ra Internet)
 

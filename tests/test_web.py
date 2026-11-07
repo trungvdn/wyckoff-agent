@@ -184,3 +184,49 @@ def test_data_error_message_is_short(monkeypatch):
     with pytest.raises(service.DataUnavailable) as e:
         service.load_ohlcv("ZZZZ", "1D", Config())
     assert e.value.status == 404 and "Quote.history" not in str(e.value)
+
+
+# ------------------------------------------------------------------ trang thị trường
+
+@pytest.fixture
+def market_app(monkeypatch):
+    import wyckoff.service as service
+
+    calls: list[bool] = []
+    days = pd.bdate_range("2024-01-01", periods=400)
+    close = pd.Series(range(1000, 1400), index=days, dtype=float)
+    frame = pd.DataFrame({"open": close, "high": close + 5, "low": close - 5, "close": close, "volume": 1e8}, index=days)
+
+    def fake(symbol, *a, refresh=False, **k):
+        calls.append(refresh)
+        assert symbol == "VNINDEX"
+        return frame
+
+    monkeypatch.setattr(service, "get_ohlcv", fake)
+    return TestClient(create_app(Settings(no_llm=True, cache_dir="cache", out_dir="output"))), calls
+
+
+def test_market_api(market_app):
+    client, calls = market_app
+    v = client.get("/api/market").json()
+    assert v["symbol"] == "VNINDEX" and v["trend"]["kind"] == "uptrend" and v["notices"] == []
+    assert all(c["met"] for c in v["conditions"]["up"]) and [r["window"] for r in v["returns"]] == [20, 60, 120]
+    assert client.get("/api/market").json() == v and calls == [False]   # lần hai lấy từ cache
+    client.get("/api/market?refresh=true")
+    assert calls == [False, True]
+
+
+def test_market_api_disabled():
+    r = TestClient(create_app(Settings(no_llm=True, no_market=True))).get("/api/market")
+    assert r.status_code == 404 and "tắt" in r.json()["detail"]
+
+
+def test_market_api_source_error_is_short(monkeypatch):
+    import wyckoff.service as service
+
+    def boom(*a, **k):
+        raise RuntimeError("Market.ohlcv[KBS]: chi tiết nội bộ")
+
+    monkeypatch.setattr(service, "get_ohlcv", boom)
+    r = TestClient(create_app(Settings(no_llm=True))).get("/api/market")
+    assert r.status_code == 502 and "KBS" not in r.json()["detail"] and "VNINDEX" in r.json()["detail"]

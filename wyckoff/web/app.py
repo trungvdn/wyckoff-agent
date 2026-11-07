@@ -14,6 +14,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
+import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
@@ -23,7 +24,8 @@ from wyckoff.agent.explain import explain
 from wyckoff.agent.llm import DEFAULT_MODEL, AnthropicClient, LLMClient, LLMError
 from wyckoff.agent.payload import build_payload
 from wyckoff.config import Config, load_config
-from wyckoff.service import DEFAULT_START, DEMO_SYMBOL, TIMEFRAMES, DataUnavailable, load_market, run_analysis
+from wyckoff.service import (DEFAULT_START, DEMO_SYMBOL, TIMEFRAMES, DataUnavailable, load_market, load_market_overview,
+                             run_analysis)
 from wyckoff.web.viewmodel import build_view
 
 logger = logging.getLogger(__name__)
@@ -79,15 +81,31 @@ class AnalysisStore:
         with self._guard:
             return self._locks.setdefault(key, threading.Lock())
 
-    def get(self, symbol: str, tf: str, refresh: bool = False) -> Entry:
-        key = (symbol, tf)
+    def _cached(self, key: tuple[str, str], refresh: bool, build: Callable[[], Entry]) -> Entry:
         with self._lock(key):
             e = self._entries.get(key)
             if e is not None and not refresh and time.monotonic() - e.created < self.settings.ttl_s:
                 return e
-            e = self._build(symbol, tf)
+            e = build()
             self._entries[key] = e
             return e
+
+    def get(self, symbol: str, tf: str, refresh: bool = False) -> Entry:
+        return self._cached((symbol, tf), refresh, lambda: self._build(symbol, tf))
+
+    def market(self, refresh: bool = False) -> dict[str, Any]:
+        """Số liệu trang thị trường. Khóa cache không trùng mã nào vì mã không chứa dấu gạch dưới."""
+        return self._cached(("_market", "1D"), refresh, lambda: self._build_market(refresh)).view
+
+    def _build_market(self, refresh: bool) -> Entry:
+        st = self.settings
+        if st.no_market or not self.cfg.market.enabled:
+            raise DataUnavailable("Dữ liệu chỉ số đang tắt trong cấu hình máy chủ.", status=404)
+        view = load_market_overview(self.cfg, cache_dir=st.cache_dir, refresh=refresh)
+        notices = []
+        if self.cfg.data.offline:
+            notices.append(f"Dữ liệu đồng bộ đến phiên {pd.Timestamp(view['as_of']):%d/%m/%Y}; máy chủ không tự cập nhật giá.")
+        return Entry(time.monotonic(), {**view, "notices": notices}, {})
 
     def _build(self, symbol: str, tf: str) -> Entry:
         st = self.settings
@@ -184,6 +202,10 @@ def create_app(settings: Settings | None = None,
         client, reason = store.client()
         return {"status": "ok", "llm": client is not None, "llm_reason": reason or None,
                 "default_symbol": settings.default_symbol, "timeframes": list(TIMEFRAMES)}
+
+    @app.get("/api/market")
+    def market(refresh: bool = False) -> dict[str, Any]:
+        return store.market(refresh=refresh)
 
     @app.get("/api/analysis/{symbol}")
     def analysis(symbol: str, tf: str = Query("1D"), refresh: bool = False) -> dict[str, Any]:

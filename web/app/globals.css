@@ -19,7 +19,10 @@
   --color-pos-hover: #5EEAD4;
   --color-pos-dim: #1F6F67;
   --color-on-pos: #062A26;
+  --color-pos-soft: #12332F;     /* nền mục đang chọn, nhãn xu hướng tăng */
+  --color-neg-soft: #2E1A1D;     /* nền nhãn xu hướng giảm */
   --color-event: #F5B841;        /* sự kiện Wyckoff */
+  --color-sma-short: #E8EEF4;    /* SMA20 trên biểu đồ thị trường */
   --color-ema-fast: #5AB4F0;     /* EMA ngắn */
   --color-ema-slow: #C792EA;     /* EMA dài */
   --color-event-dim: #6B5320;

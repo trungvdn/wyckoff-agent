@@ -3,6 +3,7 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { Suspense } from "react";
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { StatusProvider } from "@/components/layout/StatusContext";
 import "./globals.css";
 
@@ -31,19 +32,16 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="vi" className={`${plexSans.variable} ${plexMono.variable}`}>
       <body>
-        <a
-          href="#ask-question"
-          className="absolute top-2 -left-[9999px] z-10 rounded-lg bg-pos px-3 py-2 text-on-pos focus:left-2"
-        >
-          Bỏ qua tới ô hỏi agent
-        </a>
         <StatusProvider>
-          <div className="mx-auto flex max-w-[1384px] flex-col gap-4 p-4 sm:gap-5 sm:px-7 sm:pt-6 sm:pb-8">
-            <Suspense fallback={<div className="h-11" />}>
-              <Header />
-            </Suspense>
-            {children}
-            <Footer />
+          <div className="xl:flex">
+            <Sidebar />
+            <div id="content" className="mx-auto flex max-w-[1384px] min-w-0 flex-1 flex-col gap-4 p-4 sm:gap-5 sm:px-7 sm:pt-6 sm:pb-8">
+              <Suspense fallback={<div className="h-11" />}>
+                <Header />
+              </Suspense>
+              {children}
+              <Footer />
+            </div>
           </div>
         </StatusProvider>
       </body>

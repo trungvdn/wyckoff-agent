@@ -233,3 +233,56 @@ export interface AskResponse {
   model: string | null;
   errors: string[];
 }
+
+// Trang thị trường (wyckoff/market.py: market_overview)
+export type TrendKind = "uptrend" | "downtrend" | "sideways";
+
+export interface TrendCondition {
+  id: "close_fast" | "fast_slow" | "slope";
+  label: string;
+  op: ">" | "<";
+  met: boolean;
+  value: number;
+  threshold: number;
+  gap_pct: number; // % cần đi thêm để value chạm threshold
+  gap_points: number;
+  slope_pct: number | null; // chỉ có ở điều kiện "slope"
+}
+
+export interface MarketBar {
+  t: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+  vma: number | null;
+  sma_short: number | null; // chỉ để vẽ
+  sma_fast: number | null;
+  sma_slow: number | null;
+}
+
+export interface MarketOverview {
+  symbol: string;
+  as_of: string;
+  close: number;
+  change: number | null;
+  change_pct: number | null;
+  trend: {
+    kind: TrendKind | null; // null: chưa đủ lịch sử
+    since: string | null;
+    sessions: number | null;
+    sma_fast: number | null;
+    sma_slow: number | null;
+    required_bars: number;
+  };
+  conditions: { up: TrendCondition[]; down: TrendCondition[] } | null;
+  returns: { window: number; pct: number | null; from_close: number | null; from_date: string | null }[];
+  drawdown: { pct: number; peak: number; peak_date: string; sessions_since: number; lookback: number };
+  sma_periods: [number, number];
+  sma_short_period: number;
+  volume_ma_period: number;
+  bars: MarketBar[];
+  trend_segments: { kind: TrendKind; i0: number; i1: number }[];
+  notices: string[];
+}

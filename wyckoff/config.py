@@ -220,6 +220,7 @@ class MarketConfig:
     sma_fast: int = 50
     sma_slow: int = 200
     slope_bars: int = 20               # SMA50 tăng/giảm so với 20 phiên trước
+    sma_chart: int = 20                 # đường SMA thêm trên biểu đồ trang thị trường, không dùng trong quy tắc xu hướng
     return_windows: tuple[int, ...] = (20, 60, 120)
     drawdown_lookback: int = 250
     rs_windows: tuple[int, ...] = (20, 60)
