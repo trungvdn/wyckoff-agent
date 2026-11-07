@@ -10,9 +10,11 @@ import os
 import re
 import threading
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -24,8 +26,10 @@ from wyckoff.agent.explain import explain
 from wyckoff.agent.llm import DEFAULT_MODEL, AnthropicClient, LLMClient, LLMError
 from wyckoff.agent.payload import build_payload
 from wyckoff.config import Config, load_config
+from wyckoff.pipeline import analyze
+from wyckoff.portfolio import DuplicateHolding, Holding, PortfolioStore, error_row, holding_row, portfolio_view
 from wyckoff.service import (DEFAULT_START, DEMO_SYMBOL, TIMEFRAMES, DataUnavailable, load_market, load_market_overview,
-                             run_analysis)
+                             load_ohlcv, run_analysis)
 from wyckoff.web.viewmodel import build_view
 
 logger = logging.getLogger(__name__)
@@ -49,6 +53,7 @@ class Settings:
     no_llm: bool = field(default_factory=lambda: _env_flag("WYCKOFF_NO_LLM"))
     no_market: bool = field(default_factory=lambda: _env_flag("WYCKOFF_NO_MARKET"))
     offline: bool = field(default_factory=lambda: _env_flag("WYCKOFF_OFFLINE"))
+    portfolio_db: str = field(default_factory=lambda: os.environ.get("WYCKOFF_PORTFOLIO_DB", "data/portfolio.db"))
     ttl_s: float = field(default_factory=lambda: float(os.environ.get("WYCKOFF_TTL_S", "300")))
     default_symbol: str = field(default_factory=lambda: os.environ.get("WYCKOFF_DEFAULT_SYMBOL", "HPG"))
 
@@ -127,6 +132,25 @@ class AnalysisStore:
         payload = build_payload(result, symbol, market)
         return Entry(time.monotonic(), build_view(result, payload, symbol, tf, notices), payload)
 
+    def previous_view(self, symbol: str) -> dict[str, Any] | None:
+        """View model tính đến phiên liền trước, để so sánh. Lỗi hoặc thiếu nến -> None (không so được)."""
+        def build() -> Entry:
+            try:
+                ohlcv = load_ohlcv(symbol, "1D", self.cfg, start=DEFAULT_START["1D"], cache_dir=self.settings.cache_dir)
+                res = analyze(ohlcv.iloc[:-1], self.cfg)
+                view = build_view(res, build_payload(res, symbol, None), symbol, "1D")
+            except Exception as exc:  # noqa: BLE001 - thiếu phần so sánh không được làm hỏng cả danh mục
+                logger.warning("Không so được %s với phiên trước: %s", symbol, exc)
+                view = {}
+            return Entry(time.monotonic(), view, {})
+        return self._cached((symbol, "_previous"), False, build).view or None
+
+    def holding_row(self, h: Holding) -> dict[str, Any]:
+        try:
+            return holding_row(h, self.get(h.symbol, "1D").view, self.previous_view(h.symbol))
+        except DataUnavailable as exc:
+            return error_row(h, str(exc))
+
     def explanation(self, symbol: str, tf: str) -> dict[str, Any]:
         e = self.get(symbol, tf)
         if e.explanation is None:
@@ -155,6 +179,16 @@ class AskBody(BaseModel):
     question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
 
 
+class HoldingFields(BaseModel):
+    quantity: int = Field(gt=0, le=1_000_000_000)
+    cost: float = Field(gt=0, le=100_000)      # nghìn đồng
+    bought_on: date
+
+
+class NewHolding(HoldingFields):
+    symbol: str = Field(min_length=1, max_length=10)
+
+
 def _symbol(raw: str) -> str:
     s = raw.strip().upper()
     if not SYMBOL_RE.match(s):
@@ -179,6 +213,12 @@ def create_app(settings: Settings | None = None,
     store = AnalysisStore(settings, cfg, client_factory or default_client_factory(settings))
     app = FastAPI(title="Wyckoff Agent", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
     app.state.store = store
+    holdings = PortfolioStore(settings.portfolio_db)
+
+    def holding(symbol: str, body: HoldingFields) -> Holding:
+        if body.bought_on > datetime.now(ZoneInfo(cfg.data.timezone)).date():
+            raise HTTPException(422, "Ngày mua không được sau hôm nay.")
+        return Holding(symbol, body.quantity, body.cost, body.bought_on.isoformat())
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -206,6 +246,39 @@ def create_app(settings: Settings | None = None,
     @app.get("/api/market")
     def market(refresh: bool = False) -> dict[str, Any]:
         return store.market(refresh=refresh)
+
+    @app.get("/api/quote/{symbol}")
+    def quote(symbol: str) -> dict[str, Any]:
+        view = store.get(_symbol(symbol), "1D").view
+        return {"symbol": view["symbol"], "close": view["bars"][-1]["c"], "as_of": view["as_of"]}
+
+    @app.get("/api/portfolio")
+    def portfolio() -> dict[str, Any]:
+        notices = ["Dữ liệu đồng bộ theo lần gần nhất; máy chủ không tự cập nhật giá."] if cfg.data.offline else []
+        return portfolio_view([store.holding_row(h) for h in holdings.list()], notices)
+
+    @app.post("/api/portfolio", status_code=201)
+    def add_holding(body: NewHolding) -> dict[str, Any]:
+        h = holding(_symbol(body.symbol), body)
+        store.get(h.symbol, "1D")   # mã không có dữ liệu -> báo lỗi, không lưu
+        try:
+            holdings.add(h)
+        except DuplicateHolding as exc:
+            raise HTTPException(409, f"{h.symbol} đã có trong danh mục. Hãy sửa dòng hiện có.") from exc
+        return asdict(h)
+
+    @app.put("/api/portfolio/{symbol}")
+    def update_holding(symbol: str, body: HoldingFields) -> dict[str, Any]:
+        h = holding(_symbol(symbol), body)
+        if not holdings.update(h):
+            raise HTTPException(404, f"{h.symbol} không có trong danh mục.")
+        return asdict(h)
+
+    @app.delete("/api/portfolio/{symbol}", status_code=204)
+    def delete_holding(symbol: str) -> None:
+        s = _symbol(symbol)
+        if not holdings.delete(s):
+            raise HTTPException(404, f"{s} không có trong danh mục.")
 
     @app.get("/api/analysis/{symbol}")
     def analysis(symbol: str, tf: str = Query("1D"), refresh: bool = False) -> dict[str, Any]:

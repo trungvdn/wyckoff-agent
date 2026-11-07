@@ -6,14 +6,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONIOENCODING=utf-8 \
     WYCKOFF_OFFLINE=1 \
     WYCKOFF_CACHE_DIR=/data/cache \
-    WYCKOFF_OUT_DIR=/data/output
+    WYCKOFF_OUT_DIR=/data/output \
+    WYCKOFF_PORTFOLIO_DB=/data/portfolio/portfolio.db
 
 WORKDIR /app
 COPY requirements-prod.txt .
 RUN pip install --no-cache-dir --root-user-action=ignore --disable-pip-version-check -r requirements-prod.txt
 
 RUN useradd --create-home --uid 1000 app \
-    && mkdir -p /data/cache /data/output \
+    && mkdir -p /data/cache /data/output /data/portfolio \
     && chown -R app:app /data
 
 COPY serve.py .

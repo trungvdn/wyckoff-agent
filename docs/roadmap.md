@@ -20,13 +20,14 @@ Công sức (S, M, L) là ước lượng sơ bộ, chưa thiết kế chi tiế
 
 - [x] #16 Trang thị trường (`/thi-truong`): xu hướng VN-Index, điều kiện của xu hướng và điều kiện đảo chiều, lợi suất 20/60/120 phiên, mức giảm so với đỉnh, biểu đồ có khối lượng. Thêm menu trái dùng chung ([spec](handoff-dashboard.md#trang-thị-trường)).
 
+- [x] #12 Danh mục nắm giữ (`/danh-muc`): thêm, sửa, xóa mã; lãi/lỗ, giai đoạn, pha, thay đổi so với hôm qua (gồm #2), khoảng cách tới các mức giá. Lưu bằng SQLite cục bộ ([spec](handoff-dashboard.md#danh-mục-nắm-giữ)).
+
 ## Tiếp theo
 
 Xếp theo thứ tự làm.
 
 | # | Tính năng | Nội dung | Công sức | Phụ thuộc |
 |---|---|---|---|---|
-| 12 | Danh mục nắm giữ | Nhập mã, giá vốn, số lượng, ngày mua; bảng lãi/lỗ, giai đoạn, pha, thay đổi so với hôm qua (gồm #2), khoảng cách tới các mức giá | M | Nơi lưu dữ liệu cục bộ |
 | 13 | Quy tắc bán do người dùng đặt | Mỗi mã có danh sách quy tắc, ghi rõ đạt hay chưa kèm con số | M | #12 |
 | 14 | Kiểm thử quy tắc bán | So sánh bán theo quy tắc với tiếp tục giữ trên dữ liệu lịch sử, dùng lại event study | M | #13 |
 | 1 | Trình quét toàn thị trường | Job sau 15:00 lưu trạng thái mọi mã; trang bảng lọc theo giai đoạn, pha, mức tin cậy, RS, khoảng cách tới mức xác nhận/vô hiệu | M–L | Nơi lưu lịch sử trạng thái |

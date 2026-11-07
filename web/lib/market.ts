@@ -4,6 +4,7 @@ import type { Timeframe } from "./types";
 export const SYMBOL_RE = /^[A-Z0-9]{3,10}$/;
 export const DEFAULT_SYMBOL = process.env.NEXT_PUBLIC_DEFAULT_SYMBOL || "HPG";
 export const MARKET_HREF = "/thi-truong";
+export const PORTFOLIO_HREF = "/danh-muc";
 export const STOCKS_HREF = "/co-phieu";
 
 export const TIMEFRAMES: { id: string; label: string; supported: boolean }[] = [
