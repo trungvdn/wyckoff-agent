@@ -2,7 +2,7 @@
 
 Cập nhật: 07/11/2026.
 
-Mỗi tính năng một dòng; thiết kế và kết quả để ở file riêng rồi dẫn link. PR hoàn thành tính năng nào thì sửa luôn dòng đó.
+Mỗi tính năng một dòng; thiết kế và kết quả để ở file riêng rồi dẫn link. PR hoàn thành tính năng nào thì chuyển dòng đó sang mục Đã xong, ghi ngày hoàn thành và link PR.
 
 Roadmap bám theo bốn việc hằng ngày: xem danh mục, kiểm tra điều kiện bán, tìm mã tiềm năng, xem thị trường chung.
 
@@ -18,11 +18,11 @@ Công sức (S, M, L) là ước lượng sơ bộ, chưa thiết kế chi tiế
 
 ## Đã xong
 
-- [x] #16 Trang thị trường (`/thi-truong`): xu hướng VN-Index, điều kiện của xu hướng và điều kiện đảo chiều, lợi suất 20/60/120 phiên, mức giảm so với đỉnh, biểu đồ có khối lượng. Thêm menu trái dùng chung ([spec](handoff-dashboard.md#trang-thị-trường)).
-
-- [x] #12 Danh mục nắm giữ (`/danh-muc`): thêm, sửa, xóa mã; lãi/lỗ, giai đoạn, pha, thay đổi so với hôm qua (gồm #2), khoảng cách tới các mức giá. Lưu bằng SQLite cục bộ ([spec](handoff-dashboard.md#danh-mục-nắm-giữ)).
-
-- [x] #13 Quy tắc bán do người dùng đặt: mỗi mã có danh sách quy tắc theo giá vốn, mức giá, đường trung bình và cấu trúc Wyckoff; tách chốt lãi và chốt lỗ, ghi rõ đạt, gần đạt hay chưa kèm con số ([spec](handoff-dashboard.md#quy-tắc-bán)). Khối "Thay đổi so với hôm qua" đã bỏ khỏi trang, API vẫn trả `changes` cho #17 và #6.
+| # | Tính năng | Nội dung | Hoàn thành | PR |
+|---|---|---|---|---|
+| 16 | Trang thị trường | `/thi-truong`: xu hướng VN-Index, điều kiện của xu hướng và điều kiện đảo chiều, lợi suất 20/60/120 phiên, mức giảm so với đỉnh, biểu đồ có khối lượng; menu trái dùng chung ([spec](handoff-dashboard.md#trang-thị-trường)) | 07/11/2026 | [#7](https://github.com/trungvdn/wyckoff-agent/pull/7) |
+| 12 | Danh mục nắm giữ | `/danh-muc`: thêm, sửa, xóa mã; lãi/lỗ, giai đoạn, pha, thay đổi so với hôm qua (gồm #2), khoảng cách tới các mức giá; lưu bằng SQLite cục bộ ([spec](handoff-dashboard.md#danh-mục-nắm-giữ)) | 07/11/2026 | [#8](https://github.com/trungvdn/wyckoff-agent/pull/8) |
+| 13 | Quy tắc bán do người dùng đặt | Quy tắc theo giá vốn, mức giá, đường trung bình và cấu trúc Wyckoff; tách chốt lãi và chốt lỗ, ghi rõ đạt, gần đạt hay chưa kèm con số, có kiểu "Đạt là đủ" ([spec](handoff-dashboard.md#quy-tắc-bán)). Khối "Thay đổi so với hôm qua" đã bỏ khỏi trang, API vẫn trả `changes` cho #17 và #6 | 07/11/2026 | [#9](https://github.com/trungvdn/wyckoff-agent/pull/9) |
 
 ## Tiếp theo
 
