@@ -215,13 +215,15 @@ def _trend_segments(trend: pd.Series) -> list[dict[str, Any]]:
     return out
 
 
-def market_overview(index: pd.DataFrame, cfg: MarketConfig | None = None, volume_ma: int = 20) -> dict[str, Any]:
+def market_overview(index: pd.DataFrame, cfg: MarketConfig | None = None, volume_ma: int = 20,
+                    ema_periods: tuple[int, int] = (9, 21)) -> dict[str, Any]:
     """Số liệu trang thị trường tại phiên cuối của `index`. Xu hướng và mức giảm dùng cùng định nghĩa với
     `build_market_context` để trang thị trường và trang cổ phiếu không mâu thuẫn nhau."""
     cfg = cfg or MarketConfig()
     regime = market_regime(index, cfg)
     c = index["close"]
-    sma_short = c.rolling(cfg.sma_chart, min_periods=cfg.sma_chart).mean()   # chỉ để vẽ, không dùng trong quy tắc xu hướng
+    # EMA chỉ để vẽ, không dùng trong quy tắc xu hướng; cách tính giống cột ema_fast / ema_slow của add_indicators
+    ema_fast, ema_slow = (c.ewm(span=p, adjust=False, min_periods=p).mean() for p in ema_periods)
     vma = index["volume"].rolling(volume_ma, min_periods=volume_ma).mean()
     dates = [f"{ts:%Y-%m-%d}" for ts in index.index]
     n = len(index)
@@ -259,12 +261,12 @@ def market_overview(index: pd.DataFrame, cfg: MarketConfig | None = None, volume
         "drawdown": {"pct": _f((c.iloc[-1] / index["high"].iloc[peak_at] - 1) * 100), "peak": _f(index["high"].iloc[peak_at]),
                      "peak_date": dates[peak_at], "sessions_since": n - 1 - peak_at, "lookback": cfg.drawdown_lookback},
         "sma_periods": [cfg.sma_fast, cfg.sma_slow],
-        "sma_short_period": cfg.sma_chart,
+        "ema_periods": list(ema_periods),
         "volume_ma_period": volume_ma,
         "bars": [
             {"t": dates[i], "o": _f(r.open), "h": _f(r.high), "l": _f(r.low), "c": _f(r.close), "v": int(r.volume),
              "vma": None if pd.isna(vma.iloc[i]) else int(vma.iloc[i]),
-             "sma_short": _f(sma_short.iloc[i]),
+             "ema_fast": _f(ema_fast.iloc[i]), "ema_slow": _f(ema_slow.iloc[i]),
              "sma_fast": _f(regime["sma_fast"].iloc[i]), "sma_slow": _f(regime["sma_slow"].iloc[i])}
             for i, r in enumerate(index.itertuples())
         ],

@@ -257,7 +257,8 @@ export interface MarketBar {
   c: number;
   v: number;
   vma: number | null;
-  sma_short: number | null; // chỉ để vẽ
+  ema_fast: number | null; // chỉ để vẽ
+  ema_slow: number | null; // chỉ để vẽ
   sma_fast: number | null;
   sma_slow: number | null;
 }
@@ -280,7 +281,7 @@ export interface MarketOverview {
   returns: { window: number; pct: number | null; from_close: number | null; from_date: string | null }[];
   drawdown: { pct: number; peak: number; peak_date: string; sessions_since: number; lookback: number };
   sma_periods: [number, number];
-  sma_short_period: number;
+  ema_periods: [number, number];
   volume_ma_period: number;
   bars: MarketBar[];
   trend_segments: { kind: TrendKind; i0: number; i1: number }[];

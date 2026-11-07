@@ -106,7 +106,8 @@ def load_market_overview(cfg: Config, *, cache_dir: str = "cache", refresh: bool
                               "Thử lại sau ít phút.") from exc
     if idx.empty:
         raise DataUnavailable(f"Không có dữ liệu cho chỉ số {bench}", status=404)
-    return {"symbol": bench, **market_overview(idx, cfg.market, cfg.indicators.vol_ma_period)}
+    ind = cfg.indicators
+    return {"symbol": bench, **market_overview(idx, cfg.market, ind.vol_ma_period, (ind.ema_fast, ind.ema_slow))}
 
 
 def load_market(result: AnalysisResult, symbol: str, cfg: Config, *, start: str, end: str | None = None,

@@ -173,7 +173,7 @@ OpenAPI: `/api/docs`. Cấu hình qua biến môi trường `WYCKOFF_CONFIG`, `W
 |---|---|---|
 | Tóm tắt | Điểm chỉ số, thay đổi phiên, nhãn xu hướng, ngày bắt đầu và số phiên | Thiếu lịch sử: "Chưa đủ dữ liệu", ẩn hai thẻ điều kiện |
 | Bốn ô số | Lợi suất 20/60/120 phiên; giảm so với đỉnh 250 phiên | Đỉnh tính theo `high`, cùng định nghĩa với bối cảnh thị trường ở trang cổ phiếu |
-| Biểu đồ | Nến, SMA20 (chỉ để vẽ, không thuộc quy tắc xu hướng), SMA50, SMA200, dấu đỉnh, khối lượng (xanh/đỏ theo nến) kèm TB20, dải xu hướng dưới cùng | Mặc định 1N, 6T khi vùng vẽ hẹp hơn 560px; không có logo nổi vì che dải xu hướng, ghi công TradingView bằng dòng chữ có link |
+| Biểu đồ | Nến, EMA9 và EMA21 (chỉ để vẽ, không thuộc quy tắc xu hướng), SMA50, SMA200, dấu đỉnh, khối lượng (xanh/đỏ theo nến) kèm TB20, dải xu hướng dưới cùng | Mặc định 1N, 6T khi vùng vẽ hẹp hơn 560px; không có logo nổi vì che dải xu hướng, ghi công TradingView bằng dòng chữ có link |
 | Thẻ điều kiện | Giảm: "Vì sao là xu hướng giảm" và "Điều kiện đảo chiều tăng" kèm khoảng cách và mốc gần nhất. Tăng: đối xứng. Đi ngang: điều kiện của cả hai chiều | Đây là quy tắc đặt nhãn của `market_regime`, trang ghi rõ chưa phải tín hiệu đã kiểm định |
 
 Chưa đưa pha Wyckoff của chỉ số vào trang vì ngưỡng detector chưa hiệu chỉnh cho chỉ số. `WYCKOFF_NO_MARKET` hoặc `market.enabled: false`: API trả 404, trang hiện thông báo lỗi.

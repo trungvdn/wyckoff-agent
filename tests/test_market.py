@@ -333,9 +333,13 @@ def test_overview_numbers_and_segments():
     last = segs[-1]
     assert o["trend"]["since"] == o["bars"][last["i0"]]["t"] and o["trend"]["sessions"] == last["i1"] - last["i0"] + 1
     assert len(o["bars"]) == len(idx) and o["bars"][0]["vma"] is None and o["bars"][-1]["vma"] == 1_000_000
-    # SMA20 chỉ để vẽ
-    assert o["sma_short_period"] == 20 and o["bars"][18]["sma_short"] is None
-    assert o["bars"][-1]["sma_short"] == pytest.approx(values[-20:].mean(), abs=0.01)
+    # EMA chỉ để vẽ, cùng cách tính với add_indicators (nguồn của EMA ở trang cổ phiếu)
+    from wyckoff.indicators.core import add_indicators
+
+    ind = add_indicators(idx)
+    assert o["ema_periods"] == [9, 21] and o["bars"][7]["ema_fast"] is None and o["bars"][19]["ema_slow"] is None
+    assert o["bars"][-1]["ema_fast"] == pytest.approx(ind["ema_fast"].iloc[-1], abs=0.01)
+    assert o["bars"][-1]["ema_slow"] == pytest.approx(ind["ema_slow"].iloc[-1], abs=0.01)
 
 
 def test_overview_short_history_has_no_trend():

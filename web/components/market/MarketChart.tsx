@@ -1,6 +1,6 @@
 "use client";
 
-// Biểu đồ nến VN-Index: SMA20/50/200, khối lượng kèm trung bình, dấu đỉnh và dải xu hướng dưới cùng.
+// Biểu đồ nến VN-Index: EMA9/21, SMA50/200, khối lượng kèm trung bình, dấu đỉnh và dải xu hướng dưới cùng.
 // Toàn bộ số liệu lấy từ API; khung nhìn mặc định 1 năm (6 tháng trên màn hình hẹp).
 import {
   CandlestickSeries,
@@ -62,7 +62,8 @@ function Readout({ d, index }: { d: MarketOverview; index: number }) {
         {chg != null && <span className={chg >= 0 ? "text-pos" : "text-neg"}>{fmtPct2(chg)}</span>}
       </span>
       <ul aria-label="Chú giải" className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
-        <li className="flex items-center gap-1.5"><Dash color="border-sma-short" />SMA{d.sma_short_period} <span className={num}>{fmtPrice(b.sma_short)}</span></li>
+        <li className="flex items-center gap-1.5"><Dash color="border-market-ema-fast" />EMA{d.ema_periods[0]} <span className={num}>{fmtPrice(b.ema_fast)}</span></li>
+        <li className="flex items-center gap-1.5"><Dash color="border-market-ema-slow" />EMA{d.ema_periods[1]} <span className={num}>{fmtPrice(b.ema_slow)}</span></li>
         <li className="flex items-center gap-1.5"><Dash color="border-ema-fast" />SMA{d.sma_periods[0]}<span className={num}>{fmtPrice(b.sma_fast)}</span></li>
         <li className="flex items-center gap-1.5"><Dash color="border-ema-slow" />SMA{d.sma_periods[1]} <span className={num}>{fmtPrice(b.sma_slow)}</span></li>
         <li className="flex items-center gap-1.5">KL <span className={num}>{fmtVolume(b.v)}</span></li>
@@ -154,7 +155,8 @@ export function MarketChart({ data: d }: { data: MarketOverview }) {
     }]);
 
     const smaLine = (name: string, lineWidth: 1 | 2 = 2) => chart.addSeries(LineSeries, { color: color(name), lineWidth, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-    smaLine("sma-short", 1).setData(d.bars.flatMap((b) => (b.sma_short != null ? [{ time: b.t as Time, value: b.sma_short }] : [])));
+    smaLine("market-ema-fast", 1).setData(d.bars.flatMap((b) => (b.ema_fast != null ? [{ time: b.t as Time, value: b.ema_fast }] : [])));
+    smaLine("market-ema-slow", 1).setData(d.bars.flatMap((b) => (b.ema_slow != null ? [{ time: b.t as Time, value: b.ema_slow }] : [])));
     smaLine("ema-fast").setData(d.bars.flatMap((b) => (b.sma_fast != null ? [{ time: b.t as Time, value: b.sma_fast }] : [])));
     smaLine("ema-slow").setData(d.bars.flatMap((b) => (b.sma_slow != null ? [{ time: b.t as Time, value: b.sma_slow }] : [])));
 
@@ -233,7 +235,7 @@ export function MarketChart({ data: d }: { data: MarketOverview }) {
     chartRef.current?.timeScale().setVisibleLogicalRange(span);
   }
 
-  const label = `Biểu đồ nến ${d.symbol}, ${n} phiên, kèm SMA${d.sma_short_period}, SMA${d.sma_periods[0]}, SMA${d.sma_periods[1]}, khối lượng và dải xu hướng. Đóng cửa phiên cuối ${fmtPrice(d.close)}.`;
+  const label = `Biểu đồ nến ${d.symbol}, ${n} phiên, kèm EMA${d.ema_periods[0]}, EMA${d.ema_periods[1]}, SMA${d.sma_periods[0]}, SMA${d.sma_periods[1]}, khối lượng và dải xu hướng. Đóng cửa phiên cuối ${fmtPrice(d.close)}.`;
 
   return (
     <Card labelledBy="market-chart-h" className="pb-4">
