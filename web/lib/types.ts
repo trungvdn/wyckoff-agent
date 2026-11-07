@@ -309,6 +309,9 @@ interface HoldingBase {
   bought_on: string;
   cost_value: number;
   changes: HoldingChange[] | null; // null: không so được với phiên trước
+  rules: RuleItem[];
+  exit: { profit: ExitGroup; loss: ExitGroup };
+  attention: "loss" | "profit" | "near" | null;
 }
 
 export interface HoldingOk extends HoldingBase {
@@ -335,8 +338,10 @@ export type HoldingRow = HoldingOk | HoldingError;
 
 export interface Portfolio {
   as_of: string | null;
-  summary: { count: number; value: number; cost: number; pl: number; pl_pct: number | null; day: number; day_pct: number | null };
+  summary: { count: number; value: number; cost: number; pl: number; pl_pct: number | null; day: number; day_pct: number | null; rules_total: number; rules_met: number; rules_fresh: number; symbols_with_rules: number; symbols_profit: number; symbols_loss: number; symbols_near: number };
+  near_pct: number;
   rows: HoldingRow[];
+  rule_catalog: RuleCatalogGroup[];
   notices: string[];
   warnings: string[];
 }
@@ -345,4 +350,43 @@ export interface HoldingFields {
   quantity: number;
   cost: number;
   bought_on: string;
+}
+
+// Quy tắc bán (wyckoff/portfolio.py). Hệ thống chỉ báo đạt hay chưa.
+export interface ExitGroup {
+  total: number;
+  met: number;
+  ready: boolean; // đạt toàn bộ quy tắc của nhóm, hoặc có quy tắc "đạt là đủ" đã đạt
+  by_sufficient: boolean; // đủ điều kiện nhờ quy tắc "đạt là đủ"
+  has_sufficient: boolean;
+  fresh: boolean; // vừa đủ điều kiện ở phiên cuối
+  near: boolean; // chưa đủ, nhưng mọi quy tắc còn lại đều gần đạt, hoặc có quy tắc "đạt là đủ" gần đạt
+}
+
+export interface RuleItem {
+  id: number;
+  symbol: string;
+  kind: string;
+  value: number | null;
+  side: "profit" | "loss"; // chốt lãi hay chốt lỗ
+  sufficient: boolean; // "đạt là đủ": chỉ cần quy tắc này đạt là cả nhóm đủ điều kiện
+  near: boolean; // gần đạt
+  label: string;
+  now: number | string | null;
+  now_type: "pct" | "price" | "text";
+  threshold: number | null;
+  threshold_text: string | null;
+  reference: number | null; // giá trị đường trung bình khi quy tắc có mức % so với đường
+  met: boolean;
+  fresh: boolean; // vừa đạt ở phiên cuối
+  since: string | null;
+  sessions: number | null;
+  gap_pct: number | null;
+  note: string | null;
+  error: string | null;
+}
+
+export interface RuleCatalogGroup {
+  group: string;
+  kinds: { kind: string; label: string; value_label?: string | null; default_value?: number; value_hint?: string; line?: string; fixed_side?: "profit" | "loss" }[];
 }
