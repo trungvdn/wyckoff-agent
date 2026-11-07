@@ -1,6 +1,6 @@
 // Gọi API FastAPI. Trên server: gọi thẳng WYCKOFF_API_URL. Trên trình duyệt: đường dẫn tương đối /api/*
 // được next.config.ts chuyển tiếp (rewrite) sang FastAPI, nên không cần CORS.
-import type { AlertPreview, Analysis, AskResponse, Explanation, HoldingFields, MarketOverview, Portfolio, RuleItem, Timeframe } from "./types";
+import type { AlertPreview, Analysis, AskResponse, Explanation, HoldingFields, MarketOverview, Portfolio, RuleItem, SavedFilter, ScanData, ScanProgress, Timeframe } from "./types";
 
 export const API_URL = process.env.WYCKOFF_API_URL || "http://127.0.0.1:8000";
 
@@ -105,4 +105,34 @@ export function ask(symbol: string, tf: Timeframe, question: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ symbol, timeframe: tf, question }),
   });
+}
+
+export function getScan(asOf?: string) {
+  return request<ScanData>(`${base()}/api/scan${asOf ? `?as_of=${enc(asOf)}` : ""}`, { cache: "no-store" });
+}
+
+export function startScan() {
+  return request<ScanProgress>(`${base()}/api/scan`, jsonBody("POST", { confirm: true }));
+}
+
+export function getScanStatus(signal?: AbortSignal) {
+  return request<ScanProgress>(`${base()}/api/scan/status`, { cache: "no-store", signal });
+}
+
+export function stopScan() {
+  return request<ScanProgress>(`${base()}/api/scan/stop`, { method: "POST" });
+}
+
+export function getFilters() {
+  return request<SavedFilter[]>(`${base()}/api/filters`, { cache: "no-store" });
+}
+
+export function saveFilter(name: string, filters: unknown, id?: number) {
+  return id == null
+    ? request<SavedFilter>(`${base()}/api/filters`, jsonBody("POST", { name, filters }))
+    : request<SavedFilter>(`${base()}/api/filters/${id}`, jsonBody("PUT", { name, filters }));
+}
+
+export function deleteFilter(id: number) {
+  return request<unknown>(`${base()}/api/filters/${id}`, { method: "DELETE" });
 }

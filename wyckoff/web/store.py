@@ -18,7 +18,9 @@ from wyckoff.agent.payload import build_payload
 from wyckoff.config import Config, load_config
 from wyckoff.pipeline import analyze
 from wyckoff.portfolio import Holding, PortfolioStore, Rule, error_row, holding_row, portfolio_view, rule_catalog
-from wyckoff.service import DEFAULT_START, DEMO_SYMBOL, DataUnavailable, load_market, load_market_overview, load_ohlcv, run_analysis
+from wyckoff.scanner import ScanProgress, scan_row
+from wyckoff.service import (DEFAULT_START, DEMO_SYMBOL, DataUnavailable, cached_symbols, is_index, load_market,
+                             load_market_overview, load_ohlcv, prepare_index, run_analysis, update_symbol)
 from wyckoff.web.viewmodel import build_view
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,7 @@ class Settings:
     no_market: bool = field(default_factory=lambda: _env_flag("WYCKOFF_NO_MARKET"))
     offline: bool = field(default_factory=lambda: _env_flag("WYCKOFF_OFFLINE"))
     portfolio_db: str = field(default_factory=lambda: os.environ.get("WYCKOFF_PORTFOLIO_DB", "data/portfolio.db"))
+    scanner_db: str = field(default_factory=lambda: os.environ.get("WYCKOFF_SCANNER_DB", "data/scanner.db"))
     ttl_s: float = field(default_factory=lambda: float(os.environ.get("WYCKOFF_TTL_S", "300")))
     default_symbol: str = field(default_factory=lambda: os.environ.get("WYCKOFF_DEFAULT_SYMBOL", "HPG"))
 
@@ -166,6 +169,52 @@ class AnalysisStore:
             e.explanation = {"source": res.source, "model": res.model, "attempts": res.attempts,
                              "errors": res.errors if res.source == "template" else [], **res.explanation}
         return e.explanation
+
+
+ScanRunner = tuple[list[str], Callable[[str], dict[str, Any]], Callable[[str], None] | None]
+
+
+def scan_runner(settings: Settings, cfg: Config, *, update_prices: bool = True,
+                symbols: list[str] | None = None) -> Callable[[ScanProgress], ScanRunner]:
+    """Chuẩn bị một lượt quét: danh sách mã (mặc định mọi cổ phiếu trong cache), hàm cập nhật giá, hàm phân tích.
+    Máy chủ chạy offline thì không tải giá. Chỉ số so sánh được cập nhật và phân tích một lần cho cả lượt."""
+    def make(progress: ScanProgress) -> ScanRunner:
+        online = update_prices and not cfg.data.offline
+
+        def on_wait(attempt: int, wait_s: float, exc: Exception) -> None:
+            progress.waiting = f"Nguồn dữ liệu báo hết hạn mức theo phút, chờ {wait_s:.0f} giây (lần {attempt})"
+
+        universe = symbols or [s for s in cached_symbols(settings.cache_dir) if not is_index(s, cfg)]
+        offline_cfg = replace(cfg, data=replace(cfg.data, offline=True))
+        start = DEFAULT_START["1D"]
+        index = None
+        if not settings.no_market and cfg.market.enabled:
+            from wyckoff.market import benchmark_for
+
+            if online:
+                try:
+                    update_symbol(benchmark_for(cfg.data.exchange, cfg.market), cfg, cache_dir=settings.cache_dir, on_wait=on_wait)
+                except Exception as exc:  # noqa: BLE001 - vẫn quét được với dữ liệu chỉ số đang có
+                    logger.warning("Không cập nhật được chỉ số: %s", exc)
+            try:
+                index = prepare_index(offline_cfg, start=start, cache_dir=settings.cache_dir)
+            except Exception as exc:  # noqa: BLE001 - thiếu chỉ số chỉ làm mất cột RS
+                logger.warning("Không tải được chỉ số so sánh: %s", exc)
+        sma_periods = (cfg.market.sma_fast, cfg.market.sma_slow)
+
+        def analyze_one(symbol: str) -> dict[str, Any]:
+            result = run_analysis(symbol, "1D", offline_cfg, start=start, cache_dir=settings.cache_dir)
+            market = None
+            if index is not None:
+                market, _, _ = load_market(result, symbol, offline_cfg, start=start, index=index)
+            payload = build_payload(result, symbol, market)
+            return scan_row(build_view(result, payload, symbol, "1D"), market, sma_periods)
+
+        def update(symbol: str) -> None:
+            update_symbol(symbol, cfg, cache_dir=settings.cache_dir, on_wait=on_wait)
+
+        return universe, analyze_one, update if online else None
+    return make
 
 
 def default_client_factory(settings: Settings) -> Callable[[], tuple[LLMClient | None, str]]:

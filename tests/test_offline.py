@@ -74,6 +74,8 @@ def test_sync_update_continues_after_failure(tmp_path, monkeypatch, capsys):
             raise RuntimeError("nguồn lỗi")
         return None
 
-    monkeypatch.setattr(sync, "get_ohlcv", fake)
+    import wyckoff.service as service
+
+    monkeypatch.setattr(service, "get_ohlcv", fake)
     assert sync.update(["BAD", "HPG"], tmp_path, Config()) == ["BAD"]
     assert "HPG: xong" in capsys.readouterr().out
