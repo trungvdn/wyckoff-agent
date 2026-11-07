@@ -1,24 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { cx } from "@/components/ui/Card";
-import { DEFAULT_SYMBOL, SYMBOL_RE, TIMEFRAMES, UNSUPPORTED_TF_HINT, normalizeSymbol, parseTimeframe, symbolHref } from "@/lib/market";
+import { MARKET_HREF, SYMBOL_RE, TIMEFRAMES, UNSUPPORTED_TF_HINT, normalizeSymbol, parseTimeframe, symbolHref } from "@/lib/market";
 import type { Timeframe } from "@/lib/types";
 import { useStatus } from "./StatusContext";
-
-function Logo() {
-  return (
-    <Link href="/" className="mr-2 flex min-h-11 items-center gap-2.5 rounded-md text-pos" aria-label="Wyckoff Agent – trang chủ">
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <polyline points="3 17 9 11 13 15 21 7" />
-        <polyline points="15 7 21 7 21 13" />
-      </svg>
-      <span className="text-[19px] font-bold tracking-tight text-fg">Wyckoff Agent</span>
-    </Link>
-  );
-}
 
 function TickerForm({ current, tf }: { current: string; tf: Timeframe }) {
   const router = useRouter();
@@ -105,17 +93,17 @@ function StatusPill() {
   );
 }
 
-/** Thanh trên cùng: logo, ô mã, khung thời gian, trạng thái. Đọc mã / khung từ URL. */
+/** Thanh trên nội dung: ô mã (trừ trang thị trường), khung thời gian (chỉ ở trang cổ phiếu), trạng thái. Đọc mã / khung từ URL. */
 export function Header() {
   const params = useParams<{ symbol?: string }>();
   const search = useSearchParams();
+  const pathname = usePathname();
   const symbol = params.symbol ? normalizeSymbol(params.symbol) : "";
   const tf = parseTimeframe(search.get("tf") ?? undefined);
   return (
     <header className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
-      <Logo />
-      <TickerForm key={symbol} current={symbol} tf={tf} /> {/* key: đặt lại ô nhập khi đổi mã (kể cả Back / Forward) */}
-      <TimeframeNav symbol={symbol || DEFAULT_SYMBOL} tf={tf} />
+      {pathname !== MARKET_HREF && <TickerForm key={symbol} current={symbol} tf={tf} />} {/* key: đặt lại ô nhập khi đổi mã (kể cả Back / Forward) */}
+      {symbol && <TimeframeNav symbol={symbol} tf={tf} />}
       <StatusPill />
     </header>
   );

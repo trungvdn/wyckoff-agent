@@ -1,6 +1,6 @@
 // Gọi API FastAPI. Trên server: gọi thẳng WYCKOFF_API_URL. Trên trình duyệt: đường dẫn tương đối /api/*
 // được next.config.ts chuyển tiếp (rewrite) sang FastAPI, nên không cần CORS.
-import type { Analysis, AskResponse, Explanation, Timeframe } from "./types";
+import type { Analysis, AskResponse, Explanation, MarketOverview, Timeframe } from "./types";
 
 export const API_URL = process.env.WYCKOFF_API_URL || "http://127.0.0.1:8000";
 
@@ -34,6 +34,10 @@ const enc = encodeURIComponent;
 export function getAnalysis(symbol: string, tf: Timeframe, opts: { refresh?: boolean; signal?: AbortSignal } = {}) {
   const q = `tf=${tf}${opts.refresh ? "&refresh=true" : ""}`;
   return request<Analysis>(`${base()}/api/analysis/${enc(symbol)}?${q}`, { cache: "no-store", signal: opts.signal });
+}
+
+export function getMarket() {
+  return request<MarketOverview>(`${base()}/api/market`, { cache: "no-store" });
 }
 
 export function getExplanation(symbol: string, tf: Timeframe, signal?: AbortSignal) {

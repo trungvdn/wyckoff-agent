@@ -81,11 +81,39 @@ def run_analysis(symbol: str, tf: str, cfg: Config, **kw: Any) -> AnalysisResult
     return analyze(ohlcv, cfg)
 
 
+def load_index(bench: str, cfg: Config, *, start: str, end: str | None = None, cache_dir: str = "cache",
+               refresh: bool = False) -> pd.DataFrame:
+    """OHLCV ngày của chỉ số `bench`, gồm phần khởi động đủ cho SMA dài."""
+    from wyckoff.data.fetcher import vnstock_index_source
+
+    src = vnstock_index_source(cfg.market.index_source, cfg.data.chunk_days, cfg.data.coverage_tolerance_days)
+    return get_ohlcv(bench, warmup_start(start, max(cfg.data.warmup_bars, cfg.market.sma_slow)), end,
+                     cache_dir=cache_dir, source_fn=src, cfg=cfg.data, refresh=refresh, check_limits=False)
+
+
+def load_market_overview(cfg: Config, *, cache_dir: str = "cache", refresh: bool = False) -> dict[str, Any]:
+    """Số liệu trang thị trường của chỉ số theo sàn cấu hình (HOSE -> VNINDEX)."""
+    from wyckoff.market import benchmark_for, market_overview
+
+    bench = benchmark_for(cfg.data.exchange, cfg.market)
+    try:
+        idx = load_index(bench, cfg, start=DEFAULT_START["1D"], cache_dir=cache_dir, refresh=refresh)
+    except Exception as exc:  # noqa: BLE001 - lỗi nguồn dữ liệu (mạng, hạn mức); chi tiết chỉ ghi log
+        logger.warning("Không tải được dữ liệu %s: %s", bench, exc)
+        if cfg.data.offline:
+            raise DataUnavailable(f"Chỉ số {bench} chưa có trong dữ liệu đã đồng bộ lên máy chủ.", status=404) from exc
+        raise DataUnavailable(f"Không tải được dữ liệu {bench} từ nguồn vnstock (mạng hoặc hạn mức lượt gọi). "
+                              "Thử lại sau ít phút.") from exc
+    if idx.empty:
+        raise DataUnavailable(f"Không có dữ liệu cho chỉ số {bench}", status=404)
+    ind = cfg.indicators
+    return {"symbol": bench, **market_overview(idx, cfg.market, ind.vol_ma_period, (ind.ema_fast, ind.ema_slow))}
+
+
 def load_market(result: AnalysisResult, symbol: str, cfg: Config, *, start: str, end: str | None = None,
                 cache_dir: str = "cache", refresh: bool = False, demo: bool = False):
     """Tải chỉ số so sánh, chạy detector trên chỉ số, dựng bối cảnh thị trường. Lỗi -> (None, None, None)."""
     from wyckoff.agent.payload import current_structure_events
-    from wyckoff.data.fetcher import vnstock_index_source
     from wyckoff.market import benchmark_for, build_market_context
 
     try:
@@ -95,9 +123,7 @@ def load_market(result: AnalysisResult, symbol: str, cfg: Config, *, start: str,
 
             idx = make_market_index(result.df.index)
         else:
-            src = vnstock_index_source(cfg.market.index_source, cfg.data.chunk_days, cfg.data.coverage_tolerance_days)
-            idx = get_ohlcv(bench, warmup_start(start, max(cfg.data.warmup_bars, cfg.market.sma_slow)), end,
-                            cache_dir=cache_dir, source_fn=src, cfg=cfg.data, refresh=refresh, check_limits=False)
+            idx = load_index(bench, cfg, start=start, end=end, cache_dir=cache_dir, refresh=refresh)
         idx_res = analyze(idx, cfg)
         cur = idx_res.current()
         ref = {"phase": cur.phase, "since": None if cur.since is None else f"{cur.since:%Y-%m-%d}", "reason": cur.reason,

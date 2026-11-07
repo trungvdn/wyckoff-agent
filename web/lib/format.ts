@@ -9,6 +9,7 @@ type Num = number | null | undefined;
 export const fmtPrice = (x: Num) => (x == null ? "—" : P2.format(x));
 export const fmtRatio = (x: Num) => (x == null ? "—" : P2.format(x));
 export const fmtPct = (x: Num) => (x == null ? "—" : `${x > 0 ? "+" : ""}${P1.format(x)}%`);
+export const fmtPct2 = (x: Num) => (x == null ? "—" : `${x > 0 ? "+" : ""}${P2.format(x)}%`);
 export const fmtInt = (x: Num) => (x == null ? "—" : P0.format(x));
 
 export function fmtVolume(v: Num): string {

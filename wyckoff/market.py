@@ -174,6 +174,106 @@ def build_market_context(
     return ctx
 
 
+def _condition(cid: str, label: str, op: str, value: float, threshold: float, met: bool,
+               slope_pct: float | None = None) -> dict[str, Any]:
+    """Một điều kiện của quy tắc xu hướng; `gap_*`: chỉ số cần đi thêm bao nhiêu để `value` chạm `threshold`."""
+    return {"id": cid, "label": label, "op": op, "met": bool(met), "value": _f(value), "threshold": _f(threshold),
+            "gap_pct": _f((threshold / value - 1) * 100), "gap_points": _f(abs(threshold - value)),
+            "slope_pct": _f(slope_pct)}
+
+
+def trend_conditions(close: float, fast: float, slow: float, fast_prior: float,
+                     cfg: MarketConfig | None = None) -> dict[str, list[dict[str, Any]]]:
+    """Ba điều kiện của `market_regime` cho từng chiều: đạt đủ cả ba thì xu hướng đúng là chiều đó."""
+    cfg = cfg or MarketConfig()
+    f, s, n = f"SMA{cfg.sma_fast}", f"SMA{cfg.sma_slow}", cfg.slope_bars
+    slope = (fast / fast_prior - 1) * 100
+    return {
+        "up": [
+            _condition("close_fast", f"Đóng cửa trên {f}", ">", close, fast, close > fast),
+            _condition("fast_slow", f"{f} trên {s}", ">", fast, slow, fast > slow),
+            _condition("slope", f"{f} cao hơn {n} phiên trước", ">", fast, fast_prior, slope > 0, slope),
+        ],
+        "down": [
+            _condition("close_fast", f"Đóng cửa dưới {f}", "<", close, fast, close < fast),
+            _condition("fast_slow", f"{f} dưới {s}", "<", fast, slow, fast < slow),
+            _condition("slope", f"{f} thấp hơn {n} phiên trước", "<", fast, fast_prior, slope < 0, slope),
+        ],
+    }
+
+
+def _trend_segments(trend: pd.Series) -> list[dict[str, Any]]:
+    """Các đoạn liên tiếp cùng nhãn xu hướng, theo vị trí nến; bỏ phần chưa đủ lịch sử."""
+    out: list[dict[str, Any]] = []
+    for i, kind in enumerate(trend.tolist()):
+        if kind is None or kind != kind:
+            continue
+        if out and out[-1]["kind"] == kind and out[-1]["i1"] == i - 1:
+            out[-1]["i1"] = i
+        else:
+            out.append({"kind": kind, "i0": i, "i1": i})
+    return out
+
+
+def market_overview(index: pd.DataFrame, cfg: MarketConfig | None = None, volume_ma: int = 20,
+                    ema_periods: tuple[int, int] = (9, 21)) -> dict[str, Any]:
+    """Số liệu trang thị trường tại phiên cuối của `index`. Xu hướng và mức giảm dùng cùng định nghĩa với
+    `build_market_context` để trang thị trường và trang cổ phiếu không mâu thuẫn nhau."""
+    cfg = cfg or MarketConfig()
+    regime = market_regime(index, cfg)
+    c = index["close"]
+    # EMA chỉ để vẽ, không dùng trong quy tắc xu hướng; cách tính giống cột ema_fast / ema_slow của add_indicators
+    ema_fast, ema_slow = (c.ewm(span=p, adjust=False, min_periods=p).mean() for p in ema_periods)
+    vma = index["volume"].rolling(volume_ma, min_periods=volume_ma).mean()
+    dates = [f"{ts:%Y-%m-%d}" for ts in index.index]
+    n = len(index)
+
+    returns = []
+    for w in cfg.return_windows:
+        ok = n > w
+        returns.append({"window": w, "pct": _f((c.iloc[-1] / c.iloc[-1 - w] - 1) * 100) if ok else None,
+                        "from_close": _f(c.iloc[-1 - w]) if ok else None, "from_date": dates[-1 - w] if ok else None})
+
+    window = index["high"].iloc[-cfg.drawdown_lookback:]
+    peak_at = n - len(window) + int(window.to_numpy().argmax())
+
+    last_trend = regime["trend"].iloc[-1]
+    segments = _trend_segments(regime["trend"])
+    conditions = None
+    if last_trend is not None:
+        conditions = trend_conditions(float(c.iloc[-1]), float(regime["sma_fast"].iloc[-1]), float(regime["sma_slow"].iloc[-1]),
+                                      float(regime["sma_fast"].iloc[-1 - cfg.slope_bars]), cfg)
+    return {
+        "as_of": dates[-1],
+        "close": _f(c.iloc[-1]),
+        "change": _f(c.iloc[-1] - c.iloc[-2]) if n > 1 else None,
+        "change_pct": _f((c.iloc[-1] / c.iloc[-2] - 1) * 100) if n > 1 else None,
+        "trend": {
+            "kind": last_trend,
+            "since": dates[segments[-1]["i0"]] if last_trend is not None else None,
+            "sessions": segments[-1]["i1"] - segments[-1]["i0"] + 1 if last_trend is not None else None,
+            "sma_fast": _f(regime["sma_fast"].iloc[-1]),
+            "sma_slow": _f(regime["sma_slow"].iloc[-1]),
+            "required_bars": max(cfg.sma_slow, cfg.sma_fast + cfg.slope_bars),
+        },
+        "conditions": conditions,
+        "returns": returns,
+        "drawdown": {"pct": _f((c.iloc[-1] / index["high"].iloc[peak_at] - 1) * 100), "peak": _f(index["high"].iloc[peak_at]),
+                     "peak_date": dates[peak_at], "sessions_since": n - 1 - peak_at, "lookback": cfg.drawdown_lookback},
+        "sma_periods": [cfg.sma_fast, cfg.sma_slow],
+        "ema_periods": list(ema_periods),
+        "volume_ma_period": volume_ma,
+        "bars": [
+            {"t": dates[i], "o": _f(r.open), "h": _f(r.high), "l": _f(r.low), "c": _f(r.close), "v": int(r.volume),
+             "vma": None if pd.isna(vma.iloc[i]) else int(vma.iloc[i]),
+             "ema_fast": _f(ema_fast.iloc[i]), "ema_slow": _f(ema_slow.iloc[i]),
+             "sma_fast": _f(regime["sma_fast"].iloc[i]), "sma_slow": _f(regime["sma_slow"].iloc[i])}
+            for i, r in enumerate(index.itertuples())
+        ],
+        "trend_segments": segments,
+    }
+
+
 def market_confidence_factors(ctx: dict[str, Any] | None, cfg: MarketConfig | None = None) -> list[dict[str, Any]]:
     """Yếu tố tin cậy từ thị trường (2 yếu tố, mỗi yếu tố trong [-1, +1]):
     1. Xu hướng chỉ số: uptrend +1, downtrend -1, còn lại 0.

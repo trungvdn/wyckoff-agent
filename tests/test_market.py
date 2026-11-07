@@ -15,7 +15,7 @@ from wyckoff.agent.validate import style_issues, validate_explanation
 from wyckoff.config import MarketConfig
 from wyckoff.market import (
     align_index, benchmark_for, build_market_context, bullish_divergence, event_alignment, market_confidence_factors,
-    market_regime, relative_strength,
+    market_overview, market_regime, relative_strength, trend_conditions,
 )
 from wyckoff.pipeline import analyze
 from wyckoff.synthetic import make_market_index
@@ -276,3 +276,74 @@ def test_gt2_is_default_and_v1_configs_disable_it() -> None:
     assert load_config("config/default.yaml").market.trend_up_requires_rs is True
     assert load_config("config/v1.yaml").market.trend_up_requires_rs is False
     assert load_config("config/v2_pre_gt2.yaml").market.trend_up_requires_rs is False
+
+
+# --------------------------------------------------------------- trang thị trường
+
+@pytest.mark.parametrize("values, kind, side", [
+    (np.linspace(100, 300, 320), "uptrend", "up"),
+    (np.linspace(300, 100, 320), "downtrend", "down"),
+])
+def test_overview_conditions_match_regime(values, kind, side):
+    o = market_overview(_series(values))
+    other = "down" if side == "up" else "up"
+    assert o["trend"]["kind"] == kind
+    assert all(c["met"] for c in o["conditions"][side]) and not any(c["met"] for c in o["conditions"][other])
+
+
+def test_overview_conditions_agree_with_regime_every_session():
+    """Đạt đủ ba điều kiện một chiều <=> market_regime gắn đúng nhãn đó, trên chuỗi có đủ cả ba trạng thái."""
+    idx = _series(100 + 30 * np.sin(np.arange(1200) * 2 * np.pi / 500))
+    cfg = MarketConfig()
+    r = market_regime(idx, cfg)
+    seen = set()
+    for i in range(cfg.sma_slow + cfg.slope_bars, len(idx)):
+        conds = trend_conditions(idx["close"].iloc[i], r["sma_fast"].iloc[i], r["sma_slow"].iloc[i], r["sma_fast"].iloc[i - cfg.slope_bars], cfg)
+        kind = r["trend"].iloc[i]
+        seen.add(kind)
+        assert all(c["met"] for c in conds["up"]) == (kind == "uptrend")
+        assert all(c["met"] for c in conds["down"]) == (kind == "downtrend")
+    assert seen == {"uptrend", "downtrend", "sideways"}
+
+
+def test_overview_condition_gaps():
+    c = trend_conditions(1725.36, 1769.06, 1791.07, 1779.82)["up"]
+    assert [x["met"] for x in c] == [False, False, False]
+    assert c[0]["gap_pct"] == 2.53 and c[0]["threshold"] == 1769.06
+    assert c[1]["gap_points"] == 22.01
+    assert c[2]["slope_pct"] == -0.6
+
+
+def test_overview_numbers_and_segments():
+    values = np.r_[np.linspace(100, 200, 300), np.linspace(200, 150, 60)]
+    idx = _series(values)
+    o = market_overview(idx)
+    assert o["close"] == pytest.approx(150) and o["as_of"] == f"{idx.index[-1]:%Y-%m-%d}"
+    assert o["change_pct"] == pytest.approx((values[-1] / values[-2] - 1) * 100, abs=0.01)
+    r60 = next(x for x in o["returns"] if x["window"] == 60)
+    assert r60["pct"] == pytest.approx((values[-1] / values[-61] - 1) * 100, abs=0.01) and r60["from_date"] == f"{idx.index[-61]:%Y-%m-%d}"
+    # đỉnh tính theo high của 250 phiên, cùng định nghĩa với bối cảnh thị trường ở trang cổ phiếu
+    d = o["drawdown"]
+    assert d["peak"] == pytest.approx(200 * 1.005) and d["peak_date"] == f"{idx.index[299]:%Y-%m-%d}" and d["sessions_since"] == 60
+    assert d["pct"] == pytest.approx((150 / (200 * 1.005) - 1) * 100, abs=0.01)
+    # các đoạn liền nhau, kết thúc ở nến cuối, khớp nhãn của market_regime
+    segs, labels = o["trend_segments"], market_regime(idx)["trend"]
+    assert segs[-1]["i1"] == len(idx) - 1 and all(a["i1"] + 1 == b["i0"] for a, b in zip(segs, segs[1:]))
+    assert all((labels.iloc[s["i0"]: s["i1"] + 1] == s["kind"]).all() for s in segs)
+    last = segs[-1]
+    assert o["trend"]["since"] == o["bars"][last["i0"]]["t"] and o["trend"]["sessions"] == last["i1"] - last["i0"] + 1
+    assert len(o["bars"]) == len(idx) and o["bars"][0]["vma"] is None and o["bars"][-1]["vma"] == 1_000_000
+    # EMA chỉ để vẽ, cùng cách tính với add_indicators (nguồn của EMA ở trang cổ phiếu)
+    from wyckoff.indicators.core import add_indicators
+
+    ind = add_indicators(idx)
+    assert o["ema_periods"] == [9, 21] and o["bars"][7]["ema_fast"] is None and o["bars"][19]["ema_slow"] is None
+    assert o["bars"][-1]["ema_fast"] == pytest.approx(ind["ema_fast"].iloc[-1], abs=0.01)
+    assert o["bars"][-1]["ema_slow"] == pytest.approx(ind["ema_slow"].iloc[-1], abs=0.01)
+
+
+def test_overview_short_history_has_no_trend():
+    o = market_overview(_series(np.linspace(100, 110, 100)))
+    assert o["trend"]["kind"] is None and o["conditions"] is None and o["trend_segments"] == []
+    assert o["trend"]["since"] is None and o["bars"][-1]["sma_slow"] is None
+    assert next(x for x in o["returns"] if x["window"] == 120)["pct"] is None

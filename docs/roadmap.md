@@ -1,6 +1,6 @@
 # Roadmap
 
-Cập nhật: 06/11/2026.
+Cập nhật: 07/11/2026.
 
 Mỗi tính năng một dòng; thiết kế và kết quả để ở file riêng rồi dẫn link. PR hoàn thành tính năng nào thì sửa luôn dòng đó.
 
@@ -10,9 +10,15 @@ Công sức (S, M, L) là ước lượng sơ bộ, chưa thiết kế chi tiế
 
 ## Đang làm
 
-- [ ] Chốt các thay đổi chưa commit trên `main` trước khi bắt đầu tính năng mới.
-- [ ] Triển khai riêng tư lên VPS ([hướng dẫn](deploy.md)).
 - [ ] Quyết định nguồn dữ liệu lâu dài: `vnstock` đang bị PyPI cách ly (`quarantined`), chưa rõ lý do.
+
+## Tạm hoãn
+
+- [ ] Triển khai riêng tư lên VPS ([hướng dẫn](deploy.md)): bộ deploy đã xong, tạm dừng theo quyết định ngày 07/11/2026.
+
+## Đã xong
+
+- [x] #16 Trang thị trường (`/thi-truong`): xu hướng VN-Index, điều kiện của xu hướng và điều kiện đảo chiều, lợi suất 20/60/120 phiên, mức giảm so với đỉnh, biểu đồ có khối lượng. Thêm menu trái dùng chung ([spec](handoff-dashboard.md#trang-thị-trường)).
 
 ## Tiếp theo
 
@@ -20,7 +26,6 @@ Xếp theo thứ tự làm.
 
 | # | Tính năng | Nội dung | Công sức | Phụ thuộc |
 |---|---|---|---|---|
-| 16 | Trang thị trường | Xu hướng VN-Index, lợi suất 20/60/120 phiên, mức giảm so với đỉnh | S | – |
 | 12 | Danh mục nắm giữ | Nhập mã, giá vốn, số lượng, ngày mua; bảng lãi/lỗ, giai đoạn, pha, thay đổi so với hôm qua (gồm #2), khoảng cách tới các mức giá | M | Nơi lưu dữ liệu cục bộ |
 | 13 | Quy tắc bán do người dùng đặt | Mỗi mã có danh sách quy tắc, ghi rõ đạt hay chưa kèm con số | M | #12 |
 | 14 | Kiểm thử quy tắc bán | So sánh bán theo quy tắc với tiếp tục giữ trên dữ liệu lịch sử, dùng lại event study | M | #13 |

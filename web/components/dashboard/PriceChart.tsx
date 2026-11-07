@@ -9,10 +9,8 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
-  TickMarkType,
   createChart,
   createSeriesMarkers,
-  type BusinessDay,
   type IChartApi,
   type ISeriesApi,
   type Time,
@@ -22,6 +20,7 @@ import { Card, CardHeader, Eyebrow, cx } from "@/components/ui/Card";
 import { fmtDate, fmtDateShort, fmtPct, fmtPrice, fmtRatio, fmtVolume } from "@/lib/format";
 import type { Analysis, Bar } from "@/lib/types";
 import { EventLabels, PaneLabel, PhaseBands, RangeBoxes, StageStrip } from "./chartPrimitives";
+import { tickLabel, timeToIso } from "./chartTime";
 
 const RIGHT_GAP = 4;          // số ô trống bên phải nến cuối
 const DENSE_BARS = 250;       // nhìn rộng hơn: ẩn chữ sự kiện của các cấu trúc cũ để biểu đồ đỡ dày
@@ -55,21 +54,6 @@ function presetSpan(id: PresetId, d: Analysis): Span {
   const iso = cutoff.toISOString().slice(0, 10);
   const from = d.bars.findIndex((b) => b.t >= iso);
   return { from: Math.max(from, 0), to };
-}
-
-/** Thời gian của thư viện (chuỗi hoặc BusinessDay) -> "YYYY-MM-DD". */
-function timeToIso(t: Time): string {
-  if (typeof t === "string") return t;
-  if (typeof t === "number") return new Date(t * 1000).toISOString().slice(0, 10);
-  const { year, month, day } = t as BusinessDay;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-function tickLabel(t: Time, type: TickMarkType): string {
-  const iso = timeToIso(t);
-  if (type === TickMarkType.Year) return iso.slice(0, 4);
-  if (type === TickMarkType.Month) return `T${Number(iso.slice(5, 7))}/${iso.slice(2, 4)}`;
-  return fmtDateShort(iso);
 }
 
 function Readout({ d, index }: { d: Analysis; index: number }) {
