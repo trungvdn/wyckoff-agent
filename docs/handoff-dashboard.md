@@ -162,6 +162,9 @@ Không cuộn ngang ở 375px (đã kiểm tra).
 | GET | `/api/portfolio` | Danh mục: `summary`, `rows`, `as_of`, `notices`, `warnings` |
 | POST | `/api/portfolio` | `{symbol, quantity, cost, bought_on}`; 409 nếu mã đã có, 404 nếu mã không có dữ liệu |
 | PUT, DELETE | `/api/portfolio/{symbol}` | Sửa `{quantity, cost, bought_on}` hoặc xóa một mã |
+| GET | `/api/rules/preview?symbol=&kind=&value=` | Trạng thái của một quy tắc, không lưu |
+| POST | `/api/rules` | `{symbol, kind, value}`; 409 nếu trùng, 404 nếu mã chưa có trong danh mục |
+| PUT, DELETE | `/api/rules/{id}` | Sửa `{kind, value}` hoặc xóa một quy tắc |
 | GET | `/api/quote/{symbol}` | Giá đóng cửa gần nhất: `{symbol, close, as_of}` |
 | GET | `/api/explanation/{symbol}?tf=` | Diễn giải (LLM / cache / theo mẫu) theo schema prompt v4 |
 | POST | `/api/ask` | `{symbol, timeframe, question}` → `{answer, event_ids, source, model, errors}` |
@@ -189,12 +192,38 @@ Chưa đưa pha Wyckoff của chỉ số vào trang vì ngưỡng detector chưa
 | Khối | Nội dung | Ghi chú |
 |---|---|---|
 | Tổng quan | Giá trị, tổng vốn, lãi/lỗ tạm tính, thay đổi trong phiên | Mã không tải được dữ liệu không tính vào tổng, có cảnh báo trên đầu trang |
-| Thay đổi so với hôm qua | Giai đoạn, pha đổi; giá đóng cửa vừa cắt qua mức vô hiệu, xác nhận, hỗ trợ, kháng cự | So với kết quả phân tích tính đến phiên liền trước; cùng một giá thì giữ tên cụ thể hơn |
-| Bảng (thẻ khi ≤ 640px) | SL, giá vốn, giá, % trong phiên, lãi/lỗ, giai đoạn, pha, mức gần nhất ở dưới và trên giá | Mặc định mã có thay đổi trước, rồi theo giá trị; bấm tiêu đề Mã, Giá, Lãi/lỗ để đổi cách xếp |
+| Bảng (thẻ khi ≤ 640px) | SL, giá vốn, giá, % trong phiên, lãi/lỗ, giai đoạn, pha, mức gần nhất ở dưới và trên giá, ô Quy tắc | Mặc định mã có quy tắc vừa đạt trước, rồi theo giá trị; bấm tiêu đề Mã, Giá, Lãi/lỗ để đổi cách xếp |
 | Mức gần nhất | Ưu tiên mức vô hiệu, xác nhận; không có thì dùng hỗ trợ, kháng cự | Vô hiệu nằm trên giá: "đã thủng". Hỗ trợ nằm trên giá: "của range cũ" |
 | Form (`<dialog>`) | Mã, số lượng, giá vốn, ngày mua; xem trước tổng vốn và giá gần nhất | Nhận "2.000" và "22,40". Mã không có dữ liệu thì không lưu. Sửa không đổi được mã. Xóa có bước xác nhận |
 
 Lãi/lỗ chưa tính phí và thuế. Trang chỉ mô tả, không gợi ý mua bán; mức vô hiệu chưa phải tín hiệu bán đã kiểm chứng.
+
+API vẫn trả `changes` của từng mã (giai đoạn, pha đổi; giá đóng cửa vừa cắt qua một mức) dù trang không còn hiện, để #17 và #6 dùng lại.
+
+## Quy tắc bán
+
+Nằm trên trang `/danh-muc`, logic ở `wyckoff/portfolio.py`, giao diện ở `components/portfolio/RulesPanel.tsx` và `RuleDialog.tsx`. Hệ thống chỉ báo đạt hay chưa kèm con số, không khuyến nghị mua bán.
+
+| Nhóm | Quy tắc | Đạt khi |
+|---|---|---|
+| Theo giá vốn | Lỗ quá X%, lãi đạt X% | Đóng cửa ≤ giá vốn × (1 − X%), hoặc ≥ giá vốn × (1 + X%) |
+| Theo mức giá | Đóng cửa dưới mức tự nhập | Đóng cửa < mức đó |
+| Theo đường trung bình | Đóng cửa dưới SMA50, SMA200, EMA9, EMA21, kèm mức % (mặc định 0) | Đóng cửa < đường cùng phiên × (1 + %). 0%: chỉ cần dưới đường; -4%: dưới đường 4%. Chỉ nhận 0 hoặc số âm |
+| Theo cấu trúc Wyckoff | Đóng cửa dưới mức vô hiệu | Đóng cửa < mức vô hiệu cao nhất của phiên cuối |
+| Theo cấu trúc Wyckoff | Giai đoạn là Distribution, Markdown | Đoạn cuối của dải giai đoạn đã xác nhận; "tiềm năng" và "đang hình thành" chưa tính |
+
+| Thành phần | Hành vi |
+|---|---|
+| Ô Quy tắc trong bảng | Nút bấm: "1/3 đạt", "vừa đạt 1" hoặc "Chưa đặt". Chọn mã nào thì khối dưới hiện quy tắc của mã đó; mặc định mã đầu tiên, không nhớ qua lần tải lại |
+| Khối quy tắc | Tách hai nhóm Chốt lãi, Chốt lỗ. Mỗi nhóm xếp vừa đạt, đã đạt, gần đạt, rồi chưa đạt theo độ gần ngưỡng. Điện thoại: mở ngay trong thẻ của mã đang chọn |
+| Chốt lãi / chốt lỗ | Người dùng chọn cho từng quy tắc. "Lãi đạt" luôn là chốt lãi, "Lỗ quá" luôn là chốt lỗ; loại khác mặc định chốt lỗ |
+| Đủ điều kiện chốt | Khi đạt toàn bộ quy tắc trong nhóm, hoặc khi một quy tắc "Đạt là đủ" đạt (chỉ tác dụng trong nhóm của nó). Chốt lãi xanh (`--pos`), chốt lỗ đỏ (`--neg`): dấu tích, nhãn đặc màu, dòng tô nền nhạt. Luôn có chữ, không chỉ dựa vào màu |
+| Quy tắc đạt khi nhóm chưa đủ | Nhãn viền trung tính "Đạt" hoặc "Vừa đạt", không tô màu chốt |
+| Gần đạt | Từng quy tắc: giá còn cách ngưỡng không quá 2% (`NEAR_RULE_PCT`), hoặc giai đoạn đang "tiềm năng": tam giác cảnh báo hổ phách, tô nền dòng. Cả nhóm "gần đủ": chưa đủ, nhưng mọi quy tắc còn lại đều gần đạt, hoặc có một quy tắc "Đạt là đủ" gần đạt |
+| Bảng các mã | Dòng tô theo mức cần chú ý nhất (đủ chốt lỗ, đủ chốt lãi, gần đủ), có biểu tượng cạnh mã và nhãn "Chốt lỗ", "Chốt lãi", "Gần chốt lỗ", "Gần chốt lãi". Thứ tự: vừa đủ, đã đủ, gần đủ, còn lại |
+| "Đạt từ" | Phiên đầu của chuỗi đạt liên tục đến nay, không sớm hơn ngày mua. Mức vô hiệu tính theo mức của phiên cuối vì không lưu mức của các phiên trước |
+| "Vừa đạt" | Quy tắc giá: chuỗi đạt dài 1 phiên. Quy tắc giai đoạn: phiên trước chưa đạt. Không lưu lịch sử; giá quay lại thì về "Chưa đạt" |
+| Form | Chọn mã, loại, giá trị, xem trước qua `/api/rules/preview` trước khi lưu. Sửa không đổi được mã; xóa có bước xác nhận; xóa một mã thì xóa luôn quy tắc của mã đó |
 
 ## Chưa làm (cần quyết định trước khi mở ra Internet)
 

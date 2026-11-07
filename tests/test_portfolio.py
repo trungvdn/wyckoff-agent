@@ -104,7 +104,7 @@ def test_portfolio_view_totals_order_and_errors():
     s = p["summary"]
     assert s["count"] == 3 and s["value"] == 42_400_000 + 44_220_000 and s["cost"] == 44_800_000 + 37_500_000
     assert s["pl"] == 4_320_000 and s["pl_pct"] == 5.25 and s["day"] == -600_000 - 780_000
-    assert [r["symbol"] for r in p["rows"]] == ["MWG", "HPG", "ZZZ"]   # có thay đổi trước, rồi theo giá trị, mã lỗi cuối
+    assert [r["symbol"] for r in p["rows"]] == ["MWG", "HPG", "ZZZ"]   # chưa có quy tắc nên theo giá trị, mã lỗi cuối
     assert p["warnings"] == ["ZZZ: Không có dữ liệu"]
 
 

@@ -1,6 +1,6 @@
 // Gọi API FastAPI. Trên server: gọi thẳng WYCKOFF_API_URL. Trên trình duyệt: đường dẫn tương đối /api/*
 // được next.config.ts chuyển tiếp (rewrite) sang FastAPI, nên không cần CORS.
-import type { Analysis, AskResponse, Explanation, HoldingFields, MarketOverview, Portfolio, Timeframe } from "./types";
+import type { Analysis, AskResponse, Explanation, HoldingFields, MarketOverview, Portfolio, RuleItem, Timeframe } from "./types";
 
 export const API_URL = process.env.WYCKOFF_API_URL || "http://127.0.0.1:8000";
 
@@ -60,6 +60,23 @@ export function updateHolding(symbol: string, fields: HoldingFields) {
 
 export function deleteHolding(symbol: string) {
   return request<unknown>(`${base()}/api/portfolio/${enc(symbol)}`, { method: "DELETE" });
+}
+
+export function addRule(symbol: string, kind: string, value: number | null, side: RuleItem["side"], sufficient: boolean) {
+  return request<unknown>(`${base()}/api/rules`, jsonBody("POST", { symbol, kind, value, side, sufficient }));
+}
+
+export function updateRule(id: number, kind: string, value: number | null, side: RuleItem["side"], sufficient: boolean) {
+  return request<unknown>(`${base()}/api/rules/${id}`, jsonBody("PUT", { kind, value, side, sufficient }));
+}
+
+export function deleteRule(id: number) {
+  return request<unknown>(`${base()}/api/rules/${id}`, { method: "DELETE" });
+}
+
+export function previewRule(symbol: string, kind: string, value: number | null, signal?: AbortSignal) {
+  const q = new URLSearchParams({ symbol, kind, ...(value === null ? {} : { value: String(value) }) });
+  return request<RuleItem>(`${base()}/api/rules/preview?${q}`, { cache: "no-store", signal });
 }
 
 export function getQuote(symbol: string, signal?: AbortSignal) {

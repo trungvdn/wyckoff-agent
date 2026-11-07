@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import threading
@@ -13,7 +14,7 @@ import time
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -27,7 +28,8 @@ from wyckoff.agent.llm import DEFAULT_MODEL, AnthropicClient, LLMClient, LLMErro
 from wyckoff.agent.payload import build_payload
 from wyckoff.config import Config, load_config
 from wyckoff.pipeline import analyze
-from wyckoff.portfolio import DuplicateHolding, Holding, PortfolioStore, error_row, holding_row, portfolio_view
+from wyckoff.portfolio import (DuplicateHolding, DuplicateRule, Holding, PortfolioStore, Rule, error_row, evaluate_rule,
+                               holding_row, normalize_rule_side, normalize_rule_value, portfolio_view, rule_catalog, validate_rule)
 from wyckoff.service import (DEFAULT_START, DEMO_SYMBOL, TIMEFRAMES, DataUnavailable, load_market, load_market_overview,
                              load_ohlcv, run_analysis)
 from wyckoff.web.viewmodel import build_view
@@ -145,11 +147,20 @@ class AnalysisStore:
             return Entry(time.monotonic(), view, {})
         return self._cached((symbol, "_previous"), False, build).view or None
 
-    def holding_row(self, h: Holding) -> dict[str, Any]:
+    @property
+    def sma_periods(self) -> tuple[int, int]:
+        return self.cfg.market.sma_fast, self.cfg.market.sma_slow
+
+    def rule_catalog(self) -> list[dict[str, Any]]:
+        ind = self.cfg.indicators
+        return rule_catalog(self.sma_periods, (ind.ema_fast, ind.ema_slow))
+
+    def holding_row(self, h: Holding, rules: list[Rule]) -> dict[str, Any]:
+        catalog = self.rule_catalog()
         try:
-            return holding_row(h, self.get(h.symbol, "1D").view, self.previous_view(h.symbol))
+            return holding_row(h, self.get(h.symbol, "1D").view, self.previous_view(h.symbol), rules, catalog, self.sma_periods)
         except DataUnavailable as exc:
-            return error_row(h, str(exc))
+            return error_row(h, str(exc), rules, catalog)
 
     def explanation(self, symbol: str, tf: str) -> dict[str, Any]:
         e = self.get(symbol, tf)
@@ -189,6 +200,17 @@ class NewHolding(HoldingFields):
     symbol: str = Field(min_length=1, max_length=10)
 
 
+class RuleFields(BaseModel):
+    kind: str = Field(max_length=32)
+    value: float | None = None
+    side: Literal["profit", "loss"] | None = None   # None: theo loại quy tắc
+    sufficient: bool = False                        # "đạt là đủ"
+
+
+class NewRule(RuleFields):
+    symbol: str = Field(min_length=1, max_length=10)
+
+
 def _symbol(raw: str) -> str:
     s = raw.strip().upper()
     if not SYMBOL_RE.match(s):
@@ -219,6 +241,20 @@ def create_app(settings: Settings | None = None,
         if body.bought_on > datetime.now(ZoneInfo(cfg.data.timezone)).date():
             raise HTTPException(422, "Ngày mua không được sau hôm nay.")
         return Holding(symbol, body.quantity, body.cost, body.bought_on.isoformat())
+
+    def checked_rule(kind: str, value: float | None) -> float | None:
+        if value is not None and not math.isfinite(value):
+            raise HTTPException(422, "Giá trị của quy tắc không hợp lệ.")
+        error = validate_rule(kind, value)
+        if error:
+            raise HTTPException(422, error)
+        return normalize_rule_value(kind, value)
+
+    def held(symbol: str) -> Holding:
+        h = next((x for x in holdings.list() if x.symbol == symbol), None)
+        if h is None:
+            raise HTTPException(404, f"{symbol} không có trong danh mục.")
+        return h
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -255,7 +291,8 @@ def create_app(settings: Settings | None = None,
     @app.get("/api/portfolio")
     def portfolio() -> dict[str, Any]:
         notices = ["Dữ liệu đồng bộ theo lần gần nhất; máy chủ không tự cập nhật giá."] if cfg.data.offline else []
-        return portfolio_view([store.holding_row(h) for h in holdings.list()], notices)
+        rules = holdings.rules()
+        return portfolio_view([store.holding_row(h, rules.get(h.symbol, [])) for h in holdings.list()], notices, store.rule_catalog())
 
     @app.post("/api/portfolio", status_code=201)
     def add_holding(body: NewHolding) -> dict[str, Any]:
@@ -279,6 +316,43 @@ def create_app(settings: Settings | None = None,
         s = _symbol(symbol)
         if not holdings.delete(s):
             raise HTTPException(404, f"{s} không có trong danh mục.")
+
+    @app.get("/api/rules/preview")
+    def preview_rule(symbol: str, kind: str, value: float | None = None, side: Literal["profit", "loss"] | None = None) -> dict[str, Any]:
+        """Xem trước trạng thái của một quy tắc, không lưu."""
+        s = _symbol(symbol)
+        value = checked_rule(kind, value)
+        h = held(s)
+        view = store.get(s, "1D").view
+        return evaluate_rule(Rule(0, s, kind, value, normalize_rule_side(kind, side)), h, view, store.previous_view(s), store.rule_catalog(), store.sma_periods)
+
+    @app.post("/api/rules", status_code=201)
+    def add_rule(body: NewRule) -> dict[str, Any]:
+        s = _symbol(body.symbol)
+        value = checked_rule(body.kind, body.value)
+        held(s)
+        try:
+            return asdict(holdings.add_rule(s, body.kind, value, normalize_rule_side(body.kind, body.side), body.sufficient))
+        except DuplicateRule as exc:
+            raise HTTPException(409, f"{s} đã có quy tắc này.") from exc
+
+    @app.put("/api/rules/{rule_id}")
+    def update_rule(rule_id: int, body: RuleFields) -> dict[str, Any]:
+        value = checked_rule(body.kind, body.value)
+        current = holdings.rule(rule_id)
+        if current is None:
+            raise HTTPException(404, "Quy tắc không còn tồn tại.")
+        try:
+            side = normalize_rule_side(body.kind, body.side)
+            holdings.update_rule(rule_id, body.kind, value, side, body.sufficient)
+        except DuplicateRule as exc:
+            raise HTTPException(409, f"{current.symbol} đã có quy tắc này.") from exc
+        return asdict(Rule(rule_id, current.symbol, body.kind, value, side, body.sufficient))
+
+    @app.delete("/api/rules/{rule_id}", status_code=204)
+    def delete_rule(rule_id: int) -> None:
+        if not holdings.delete_rule(rule_id):
+            raise HTTPException(404, "Quy tắc không còn tồn tại.")
 
     @app.get("/api/analysis/{symbol}")
     def analysis(symbol: str, tf: str = Query("1D"), refresh: bool = False) -> dict[str, Any]:

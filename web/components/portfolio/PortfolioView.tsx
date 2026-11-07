@@ -1,6 +1,6 @@
 "use client";
 
-// Trang danh mục: tổng quan, thay đổi so với hôm qua, bảng các mã (thẻ trên điện thoại), form thêm / sửa.
+// Trang danh mục: tổng quan, bảng các mã (thẻ trên điện thoại), quy tắc bán của mã đang chọn, form thêm / sửa.
 // Mọi con số lấy từ API; giao diện chỉ định dạng và sắp xếp.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,13 +12,13 @@ import { Button } from "@/components/ui/Button";
 import { Card, cx } from "@/components/ui/Card";
 import { fmtDate, fmtInt, fmtMillion, fmtPct2, fmtPrice } from "@/lib/format";
 import { symbolHref } from "@/lib/market";
-import type { HoldingChange, HoldingOk, HoldingRow, LevelKind, LevelRef, Portfolio } from "@/lib/types";
+import type { HoldingOk, HoldingRow, LevelRef, Portfolio, RuleItem } from "@/lib/types";
 import { HoldingDialog, type DialogValue } from "./HoldingDialog";
+import { RuleDialog } from "./RuleDialog";
+import { AttentionIcon, RuleBadges, RulesInline, RulesPanel, attentionTint, ruleCount } from "./RulesPanel";
 
 const signColor = (x: number | null | undefined) => (x == null || x === 0 ? "text-muted" : x < 0 ? "text-neg" : "text-pos");
 const isOk = (r: HoldingRow): r is HoldingOk => r.error === null;
-
-const LEVEL_NAME: Record<LevelKind, string> = { support: "hỗ trợ", resistance: "kháng cự", confirm: "mức xác nhận", invalidate: "mức vô hiệu" };
 
 /** Tên mức trong bảng. Hỗ trợ nằm trên giá (hoặc kháng cự nằm dưới giá) nghĩa là giá đã ra khỏi range đó. */
 function levelTitle(l: LevelRef, side: "below" | "above"): string {
@@ -33,15 +33,9 @@ function LevelCell({ level, side }: { level: LevelRef | null; side: "below" | "a
   return (
     <>
       <div className={level.breached ? "text-event" : "text-muted"}>{levelTitle(level, side)}</div>
-      <div className="font-mono tabular-nums">{fmtPrice(level.price)} · {fmtPct2(level.pct)}</div>
+      <div className="font-mono whitespace-nowrap tabular-nums">{fmtPrice(level.price)} · {fmtPct2(level.pct)}</div>
     </>
   );
-}
-
-function changeText(c: HoldingChange) {
-  const num = (x: number) => <span className="font-mono tabular-nums">{fmtPrice(x)}</span>;
-  if (c.kind !== "level") return <>{c.kind === "stage" ? "Giai đoạn" : "Pha"} đổi từ {c.from} sang {c.to}.</>;
-  return <>Đóng cửa {num(c.close)}, {c.direction === "below" ? "xuống dưới" : "lên trên"} {LEVEL_NAME[c.level]} {num(c.price)} (hôm qua {num(c.prev_close)}).</>;
 }
 
 function SummaryTile({ title, value, note, color, noteMono }: { title: string; value: string; note: string; color?: string; noteMono?: boolean }) {
@@ -51,32 +45,6 @@ function SummaryTile({ title, value, note, color, noteMono }: { title: string; v
       <div className={cx("font-mono text-[22px] font-semibold tabular-nums sm:text-2xl", color)}>{value}</div>
       <div className={cx("text-xs", noteMono ? "font-mono tabular-nums" : "", color ?? "text-faint")}>{note}</div>
     </div>
-  );
-}
-
-function Changes({ rows }: { rows: HoldingRow[] }) {
-  const changed = rows.filter((r) => r.changes?.length);
-  const compared = rows.filter((r) => r.changes !== null).length;
-  return (
-    <Card labelledBy="changes-h" className="gap-2.5">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 id="changes-h" className="m-0 text-sm font-semibold">Thay đổi so với hôm qua</h2>
-        <span className="text-[13px] text-muted">
-          {changed.length} mã có thay đổi · {compared - changed.length} mã giữ nguyên
-          {compared < rows.length && ` · ${rows.length - compared} mã chưa so được`}
-        </span>
-      </div>
-      {changed.length > 0 && (
-        <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {changed.flatMap((r) => r.changes!.map((c, i) => (
-            <li key={`${r.symbol}-${i}`} className="grid grid-cols-[56px_1fr] gap-2">
-              <Link href={symbolHref(r.symbol)} className="font-mono font-semibold hover:text-pos-hover">{r.symbol}</Link>
-              <span className="text-fg-2">{changeText(c)}</span>
-            </li>
-          )))}
-        </ul>
-      )}
-    </Card>
   );
 }
 
@@ -102,10 +70,30 @@ function MoreButton({ symbol, onClick }: { symbol: string; onClick: () => void }
   );
 }
 
-const TH = "border-y border-line px-3 py-2 font-medium";
+const TH = "border-y border-line px-3 py-2 font-medium whitespace-nowrap";
 const TD = "border-b border-line px-3 py-2.5 align-top";
 
-function HoldingsTable({ rows, onEdit }: { rows: HoldingRow[]; onEdit: (r: HoldingRow) => void }) {
+function RuleButton({ row, selected, onPick, wide }: { row: HoldingRow; selected: boolean; onPick: () => void; wide?: boolean }) {
+  const c = ruleCount(row);
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      aria-pressed={selected}
+      aria-label={`Xem quy tắc bán của ${row.symbol}: ${c.text}${c.note ? `, ${c.note}` : ""}`}
+      className={cx(
+        "min-h-11 cursor-pointer rounded-lg border px-2.5 py-1 transition-colors",
+        wide ? "flex min-w-0 flex-1 items-center justify-between gap-2 text-sm" : "w-[84px] flex-none text-left",
+        selected ? "border-pos bg-pos-soft" : "border-line-strong hover:border-muted",
+      )}
+    >
+      {wide && <span>Quy tắc bán</span>}
+      <span className={cx("font-semibold whitespace-nowrap", c.color)}>{c.text}</span>
+    </button>
+  );
+}
+
+function HoldingsTable({ rows, picked, onPick, onEdit }: { rows: HoldingRow[]; picked: string; onPick: (s: string) => void; onEdit: (r: HoldingRow) => void }) {
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean } | null>(null);
   const sorted = useMemo(() => sortRows(rows, sort?.key ?? null, sort?.desc ?? false), [rows, sort]);
 
@@ -126,8 +114,8 @@ function HoldingsTable({ rows, onEdit }: { rows: HoldingRow[]; onEdit: (r: Holdi
   }
 
   return (
-    <div className="overflow-x-auto max-sm:hidden">
-      <table className="w-full min-w-[940px] border-collapse text-[13px]">
+    <div className="relative overflow-x-auto max-sm:hidden">
+      <table className="w-full min-w-[1100px] border-collapse text-[13px]">
         <thead>
           <tr className="text-left text-muted">
             {header("symbol", "Mã")}
@@ -137,27 +125,31 @@ function HoldingsTable({ rows, onEdit }: { rows: HoldingRow[]; onEdit: (r: Holdi
             <th scope="col" className={TH}>Giai đoạn · Pha</th>
             <th scope="col" className={TH}>Mức dưới giá</th>
             <th scope="col" className={TH}>Mức trên giá</th>
+            <th scope="col" className={TH}>Quy tắc</th>
             <th scope="col" className={cx(TH, "pr-5")}><span className="sr-only">Thao tác</span></th>
           </tr>
         </thead>
         <tbody>
           {sorted.map((r) => (
-            <tr key={r.symbol}>
+            <tr key={r.symbol} className={attentionTint(r.attention)}>
               <th scope="row" className={cx(TD, "pl-5 text-left font-normal")}>
-                <Link href={symbolHref(r.symbol)} className="font-mono text-sm font-semibold hover:text-pos-hover">{r.symbol}</Link>
-                <div className="text-xs text-faint">mua {fmtDate(r.bought_on)}</div>
+                <span className="flex items-center gap-1.5">
+                  <Link href={symbolHref(r.symbol)} className="font-mono text-sm font-semibold hover:text-pos-hover">{r.symbol}</Link>
+                  <AttentionIcon kind={r.attention} />
+                </span>
+                <div className="text-xs whitespace-nowrap text-faint">mua {fmtDate(r.bought_on)}</div>
               </th>
-              <td className={cx(TD, "text-right font-mono tabular-nums")}>
+              <td className={cx(TD, "text-right font-mono whitespace-nowrap tabular-nums")}>
                 <div>{fmtInt(r.quantity)}</div>
                 <div className="text-muted">{fmtPrice(r.cost)}</div>
               </td>
               {isOk(r) ? (
                 <>
-                  <td className={cx(TD, "text-right font-mono tabular-nums")}>
+                  <td className={cx(TD, "text-right font-mono whitespace-nowrap tabular-nums")}>
                     <div>{fmtPrice(r.price)}</div>
                     <div className={signColor(r.day_pct)}>{fmtPct2(r.day_pct)}</div>
                   </td>
-                  <td className={cx(TD, "text-right font-mono tabular-nums", signColor(r.pl))}>
+                  <td className={cx(TD, "text-right font-mono whitespace-nowrap tabular-nums", signColor(r.pl))}>
                     <div className="font-semibold">{fmtMillion(r.pl, true)}</div>
                     <div>{fmtPct2(r.pl_pct)}</div>
                   </td>
@@ -171,6 +163,12 @@ function HoldingsTable({ rows, onEdit }: { rows: HoldingRow[]; onEdit: (r: Holdi
               ) : (
                 <td colSpan={5} className={cx(TD, "text-event")}>Không tải được dữ liệu: {r.error}</td>
               )}
+              <td className={cx(TD, "py-1.5")}>
+                <div className="flex items-center gap-2">
+                  <RuleButton row={r} selected={r.symbol === picked} onPick={() => onPick(r.symbol)} />
+                  <span className="flex flex-col items-start gap-1 empty:hidden"><RuleBadges row={r} /></span>
+                </div>
+              </td>
               <td className="border-b border-line py-1 pr-5 pl-1 text-right align-middle"><MoreButton symbol={r.symbol} onClick={() => onEdit(r)} /></td>
             </tr>
           ))}
@@ -180,13 +178,23 @@ function HoldingsTable({ rows, onEdit }: { rows: HoldingRow[]; onEdit: (r: Holdi
   );
 }
 
-function HoldingCards({ rows, onEdit }: { rows: HoldingRow[]; onEdit: (r: HoldingRow) => void }) {
+function HoldingCards({ rows, picked, onPick, onEdit, onAddRule, onEditRule }: {
+  rows: HoldingRow[];
+  picked: string;
+  onPick: (s: string) => void;
+  onEdit: (r: HoldingRow) => void;
+  onAddRule: (symbol: string) => void;
+  onEditRule: (r: RuleItem) => void;
+}) {
   return (
     <div className="flex flex-col gap-3 sm:hidden">
       {rows.map((r) => (
-        <article key={r.symbol} className="flex flex-col gap-1.5 rounded-xl border border-line bg-surface py-2 pr-1.5 pl-3.5">
+        <article key={r.symbol} className={cx("flex flex-col gap-1.5 rounded-xl border border-line py-2 pr-1.5 pl-3.5", attentionTint(r.attention) || "bg-surface")}>
           <div className="flex items-center justify-between gap-2">
-            <Link href={symbolHref(r.symbol)} className="flex min-h-11 items-center font-mono text-base font-semibold">{r.symbol}</Link>
+            <span className="flex items-center gap-1.5">
+              <Link href={symbolHref(r.symbol)} className="flex min-h-11 items-center font-mono text-base font-semibold">{r.symbol}</Link>
+              <AttentionIcon kind={r.attention} />
+            </span>
             <div className="flex items-center gap-1">
               {isOk(r) && <span className={cx("font-mono text-[13px] font-semibold tabular-nums", signColor(r.pl))}>{fmtMillion(r.pl, true)} · {fmtPct2(r.pl_pct)}</span>}
               <MoreButton symbol={r.symbol} onClick={() => onEdit(r)} />
@@ -207,6 +215,11 @@ function HoldingCards({ rows, onEdit }: { rows: HoldingRow[]; onEdit: (r: Holdin
           ) : (
             <div className="pr-2 pb-1 text-event">Không tải được dữ liệu: {r.error}</div>
           )}
+          <div className="flex items-center gap-2 pr-2">
+            <RuleButton row={r} selected={r.symbol === picked} onPick={() => onPick(r.symbol)} wide />
+            <span className="flex flex-none flex-col items-end gap-1 empty:hidden"><RuleBadges row={r} /></span>
+          </div>
+          {r.symbol === picked && <RulesInline row={r} onAdd={() => onAddRule(r.symbol)} onEdit={onEditRule} />}
         </article>
       ))}
     </div>
@@ -231,6 +244,10 @@ export function PortfolioView({ data }: { data: Portfolio }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [dialog, setDialog] = useState<{ value: DialogValue | null } | null>(null);
+  const [ruleDialog, setRuleDialog] = useState<{ symbol: string; rule: RuleItem | null } | null>(null);
+  const [pickedRaw, setPicked] = useState<string | null>(null);
+  // Mặc định: mã đầu tiên trong danh mục. Mã đang chọn bị xóa thì quay về mã đầu tiên
+  const pickedRow = data.rows.find((r) => r.symbol === pickedRaw) ?? data.rows[0];
   const s = data.summary;
 
   const addButton = (label: string, className?: string) => (
@@ -250,6 +267,24 @@ export function PortfolioView({ data }: { data: Portfolio }) {
       }}
     />
   );
+
+  const ruleForm = ruleDialog && (
+    <RuleDialog
+      key={ruleDialog.rule?.id ?? `new-${ruleDialog.symbol}`}
+      symbols={data.rows.map((r) => r.symbol)}
+      symbol={ruleDialog.symbol}
+      rule={ruleDialog.rule}
+      catalog={data.rule_catalog}
+      costOf={(sym) => data.rows.find((r) => r.symbol === sym)?.cost ?? null}
+      onClose={() => setRuleDialog(null)}
+      onSaved={() => {
+        setRuleDialog(null);
+        startTransition(() => router.refresh());
+      }}
+    />
+  );
+  const addRule = (symbol: string) => setRuleDialog({ symbol, rule: null });
+  const editRule = (rule: RuleItem) => setRuleDialog({ symbol: rule.symbol, rule });
 
   if (data.rows.length === 0) {
     return (
@@ -276,21 +311,28 @@ export function PortfolioView({ data }: { data: Portfolio }) {
       <PageBar showStatus>{addButton("Thêm mã", "max-sm:ml-auto")}</PageBar>
       <Banner notices={data.notices} warnings={data.warnings} />
       <main className="flex flex-col gap-4 sm:gap-5">
-        <section aria-label="Tổng quan danh mục" className="grid grid-cols-2 gap-3 sm:gap-5 wide:grid-cols-4">
+        <section aria-label="Tổng quan danh mục" className="grid grid-cols-2 gap-3 sm:gap-5 wide:grid-cols-5">
           <SummaryTile title="Giá trị hiện tại" value={fmtMillion(s.value)} note={`${s.count} mã`} />
           <SummaryTile title="Tổng vốn" value={fmtMillion(s.cost)} note="theo giá vốn đã nhập" />
           <SummaryTile title="Lãi/lỗ tạm tính" value={fmtMillion(s.pl, true)} note={fmtPct2(s.pl_pct)} color={signColor(s.pl)} noteMono />
           <SummaryTile title="Thay đổi trong phiên" value={fmtMillion(s.day, true)} note={fmtPct2(s.day_pct)} color={signColor(s.day)} noteMono />
+          <SummaryTile
+            title="Mã đủ điều kiện chốt"
+            value={s.symbols_with_rules ? `${s.symbols_profit + s.symbols_loss}/${s.symbols_with_rules}` : "—"}
+            note={s.symbols_with_rules ? `chốt lãi ${s.symbols_profit} · chốt lỗ ${s.symbols_loss} · gần đạt ${s.symbols_near}` : "chưa đặt quy tắc nào"}
+            color={s.symbols_loss ? "text-neg" : s.symbols_profit ? "text-pos" : s.symbols_near ? "text-event" : undefined}
+          />
         </section>
-        <Changes rows={data.rows} />
         <section aria-labelledby="holdings-h" className="flex flex-col gap-3 overflow-hidden sm:gap-0 sm:rounded-xl sm:border sm:border-line sm:bg-surface">
           <h2 id="holdings-h" className="m-0 text-sm font-semibold sm:px-5 sm:pt-4 sm:pb-3">Các mã đang giữ</h2>
-          <HoldingsTable rows={data.rows} onEdit={edit} />
-          <HoldingCards rows={data.rows} onEdit={edit} />
+          <HoldingsTable rows={data.rows} picked={pickedRow.symbol} onPick={setPicked} onEdit={edit} />
+          <HoldingCards rows={data.rows} picked={pickedRow.symbol} onPick={setPicked} onEdit={edit} onAddRule={addRule} onEditRule={editRule} />
           <p className="m-0 text-xs text-faint sm:px-5 sm:pt-3 sm:pb-3.5">Lãi/lỗ chưa tính phí và thuế. Mức vô hiệu chỉ cho biết cấu trúc không còn hiệu lực, chưa phải tín hiệu bán đã kiểm chứng.</p>
         </section>
+        <RulesPanel row={pickedRow} nearPct={data.near_pct} onAdd={() => addRule(pickedRow.symbol)} onEdit={editRule} />
       </main>
       {form}
+      {ruleForm}
     </>
   );
 }

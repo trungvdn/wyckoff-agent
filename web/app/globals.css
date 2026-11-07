@@ -27,6 +27,7 @@
   --color-ema-fast: #5AB4F0;     /* EMA ngắn */
   --color-ema-slow: #C792EA;     /* EMA dài */
   --color-event-dim: #6B5320;
+  --color-event-soft: #2A2210;   /* nền dòng có quy tắc gần đạt */
   --color-neg: #F87171;          /* nến giảm, vô hiệu */
   --color-neg-dim: #6E3434;
   --color-vol: #4A5866;
