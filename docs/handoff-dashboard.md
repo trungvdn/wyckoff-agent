@@ -163,6 +163,9 @@ Không cuộn ngang ở 375px (đã kiểm tra).
 | POST | `/api/portfolio` | `{symbol, quantity, cost, bought_on}`; 409 nếu mã đã có, 404 nếu mã không có dữ liệu |
 | PUT, DELETE | `/api/portfolio/{symbol}` | Sửa `{quantity, cost, bought_on}` hoặc xóa một mã |
 | GET | `/api/rules/preview?symbol=&kind=&value=` | Trạng thái của một quy tắc, không lưu |
+| PUT | `/api/portfolio/{symbol}/alerts` | Bật/tắt thông báo của một mã: `{enabled}` |
+| GET | `/api/alerts/preview` | Nội dung sẽ gửi, số mã bật/tắt, đã cấu hình Telegram chưa |
+| POST | `/api/alerts/send` | `{confirm: true}`: gửi tình trạng hiện tại qua Telegram ([hướng dẫn](alerts.md)) |
 | POST | `/api/rules` | `{symbol, kind, value}`; 409 nếu trùng, 404 nếu mã chưa có trong danh mục |
 | PUT, DELETE | `/api/rules/{id}` | Sửa `{kind, value}` hoặc xóa một quy tắc |
 | GET | `/api/quote/{symbol}` | Giá đóng cửa gần nhất: `{symbol, close, as_of}` |

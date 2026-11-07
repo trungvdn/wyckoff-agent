@@ -5,6 +5,7 @@ Giá tính bằng nghìn đồng như phần còn lại của hệ thống; giá
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import closing
 from dataclasses import asdict, dataclass
@@ -34,6 +35,7 @@ class Holding:
     quantity: int
     cost: float        # giá vốn trung bình, nghìn đồng
     bought_on: str     # YYYY-MM-DD
+    alerts_enabled: bool = True   # tắt thì job và nút gửi thông báo bỏ qua mã này
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,18 @@ class PortfolioStore:
             kind TEXT NOT NULL,
             value REAL)""")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS rules_unique ON rules (symbol, kind, COALESCE(value, -1))")
+        conn.execute("""CREATE TABLE IF NOT EXISTS alert_state (
+            symbol TEXT PRIMARY KEY,
+            state TEXT NOT NULL,
+            as_of TEXT NOT NULL)""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS alert_log (
+            id INTEGER PRIMARY KEY,
+            sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            as_of TEXT,
+            message TEXT NOT NULL)""")
+        if "alerts_enabled" not in {c[1] for c in conn.execute("PRAGMA table_info(holdings)")}:   # dữ liệu cũ: mặc định bật
+            conn.execute("ALTER TABLE holdings ADD COLUMN alerts_enabled INTEGER NOT NULL DEFAULT 1")
+            conn.commit()
         columns = {c[1] for c in conn.execute("PRAGMA table_info(rules)")}
         if "sufficient" not in columns:   # dữ liệu tạo trước khi có "đạt là đủ"
             conn.execute("ALTER TABLE rules ADD COLUMN sufficient INTEGER NOT NULL DEFAULT 0")
@@ -79,13 +93,14 @@ class PortfolioStore:
 
     def list(self) -> list[Holding]:
         with closing(self._connect()) as conn:
-            rows = conn.execute("SELECT symbol, quantity, cost, bought_on FROM holdings ORDER BY symbol").fetchall()
-        return [Holding(*r) for r in rows]
+            rows = conn.execute("SELECT symbol, quantity, cost, bought_on, alerts_enabled FROM holdings ORDER BY symbol").fetchall()
+        return [Holding(*r[:4], bool(r[4])) for r in rows]
 
     def add(self, h: Holding) -> None:
         with closing(self._connect()) as conn, conn:
             try:
-                conn.execute("INSERT INTO holdings VALUES (?, ?, ?, ?)", (h.symbol, h.quantity, h.cost, h.bought_on))
+                conn.execute("INSERT INTO holdings (symbol, quantity, cost, bought_on, alerts_enabled) VALUES (?, ?, ?, ?, ?)",
+                             (h.symbol, h.quantity, h.cost, h.bought_on, int(h.alerts_enabled)))
             except sqlite3.IntegrityError as exc:
                 raise DuplicateHolding(h.symbol) from exc
 
@@ -94,6 +109,10 @@ class PortfolioStore:
             cur = conn.execute("UPDATE holdings SET quantity = ?, cost = ?, bought_on = ? WHERE symbol = ?",
                                (h.quantity, h.cost, h.bought_on, h.symbol))
             return cur.rowcount > 0
+
+    def set_alerts(self, symbol: str, enabled: bool) -> bool:
+        with closing(self._connect()) as conn, conn:
+            return conn.execute("UPDATE holdings SET alerts_enabled = ? WHERE symbol = ?", (int(enabled), symbol)).rowcount > 0
 
     def delete(self, symbol: str) -> bool:
         with closing(self._connect()) as conn, conn:
@@ -134,6 +153,27 @@ class PortfolioStore:
     def delete_rule(self, rule_id: int) -> bool:
         with closing(self._connect()) as conn, conn:
             return conn.execute("DELETE FROM rules WHERE id = ?", (rule_id,)).rowcount > 0
+
+    def alert_states(self) -> dict[str, tuple[dict[str, Any], str]]:
+        """Trạng thái lần cảnh báo trước của từng mã: (trạng thái, phiên)."""
+        with closing(self._connect()) as conn:
+            rows = conn.execute("SELECT symbol, state, as_of FROM alert_state").fetchall()
+        return {sym: (json.loads(state), as_of) for sym, state, as_of in rows}
+
+    def save_alert_states(self, states: dict[str, tuple[dict[str, Any], str]]) -> None:
+        """Thay toàn bộ trạng thái; mã đã bán không còn trong `states` thì bị xóa."""
+        with closing(self._connect()) as conn, conn:
+            conn.execute("DELETE FROM alert_state")
+            conn.executemany("INSERT INTO alert_state VALUES (?, ?, ?)",
+                             [(sym, json.dumps(state, ensure_ascii=False), as_of) for sym, (state, as_of) in states.items()])
+
+    def log_alert(self, as_of: str | None, message: str) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("INSERT INTO alert_log (as_of, message) VALUES (?, ?)", (as_of, message))
+
+    def alert_log(self) -> list[tuple[str | None, str]]:
+        with closing(self._connect()) as conn:
+            return conn.execute("SELECT as_of, message FROM alert_log ORDER BY id").fetchall()
 
 
 def _level_ref(kind: str, price: float, close: float) -> dict[str, Any]:

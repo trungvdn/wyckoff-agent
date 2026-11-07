@@ -5,183 +5,27 @@
 """
 from __future__ import annotations
 
-import logging
 import math
-import os
 import re
-import threading
-import time
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict
 from datetime import date, datetime
-from pathlib import Path
 from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo
 
-import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from wyckoff.agent.ask import MAX_QUESTION_CHARS, answer_question
-from wyckoff.agent.explain import explain
-from wyckoff.agent.llm import DEFAULT_MODEL, AnthropicClient, LLMClient, LLMError
-from wyckoff.agent.payload import build_payload
-from wyckoff.config import Config, load_config
-from wyckoff.pipeline import analyze
-from wyckoff.portfolio import (DuplicateHolding, DuplicateRule, Holding, PortfolioStore, Rule, error_row, evaluate_rule,
-                               holding_row, normalize_rule_side, normalize_rule_value, portfolio_view, rule_catalog, validate_rule)
-from wyckoff.service import (DEFAULT_START, DEMO_SYMBOL, TIMEFRAMES, DataUnavailable, load_market, load_market_overview,
-                             load_ohlcv, run_analysis)
-from wyckoff.web.viewmodel import build_view
+from wyckoff.agent.llm import LLMClient
+from wyckoff.alerts import AlertSendError, current_summary, split_message, telegram_from_env
+from wyckoff.portfolio import (DuplicateHolding, DuplicateRule, Holding, PortfolioStore, Rule, evaluate_rule,
+                               normalize_rule_side, normalize_rule_value, validate_rule)
+from wyckoff.service import TIMEFRAMES, DataUnavailable
+from wyckoff.web.store import AnalysisStore, Settings, default_client_factory, load_app_config
 
-logger = logging.getLogger(__name__)
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{3,10}$")
-TF_LABEL = {"1D": "Ngày", "1W": "Tuần"}
 UNSUPPORTED_TF = {"15m": "15 phút", "1H": "Giờ"}
-
-
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
-
-
-@dataclass
-class Settings:
-    # Mặc định config/v3.yaml; WYCKOFF_CONFIG rỗng: dùng Config() (như backtest)
-    config_path: str | None = field(default_factory=lambda: os.environ.get(
-        "WYCKOFF_CONFIG", str(Path(__file__).resolve().parents[2] / "config" / "v3.yaml")) or None)
-    cache_dir: str = field(default_factory=lambda: os.environ.get("WYCKOFF_CACHE_DIR", "cache"))
-    out_dir: str = field(default_factory=lambda: os.environ.get("WYCKOFF_OUT_DIR", "output"))
-    model: str = field(default_factory=lambda: os.environ.get("WYCKOFF_MODEL", DEFAULT_MODEL))
-    no_llm: bool = field(default_factory=lambda: _env_flag("WYCKOFF_NO_LLM"))
-    no_market: bool = field(default_factory=lambda: _env_flag("WYCKOFF_NO_MARKET"))
-    offline: bool = field(default_factory=lambda: _env_flag("WYCKOFF_OFFLINE"))
-    portfolio_db: str = field(default_factory=lambda: os.environ.get("WYCKOFF_PORTFOLIO_DB", "data/portfolio.db"))
-    ttl_s: float = field(default_factory=lambda: float(os.environ.get("WYCKOFF_TTL_S", "300")))
-    default_symbol: str = field(default_factory=lambda: os.environ.get("WYCKOFF_DEFAULT_SYMBOL", "HPG"))
-
-
-@dataclass
-class Entry:
-    created: float
-    view: dict[str, Any]
-    payload: dict[str, Any]
-    explanation: dict[str, Any] | None = None
-
-
-class AnalysisStore:
-    """Cache trong bộ nhớ theo (mã, khung), hết hạn sau `ttl_s`; khóa riêng từng khóa để không tải trùng."""
-
-    def __init__(self, settings: Settings, cfg: Config, client_factory: Callable[[], tuple[LLMClient | None, str]]):
-        self.settings, self.cfg = settings, cfg
-        self._entries: dict[tuple[str, str], Entry] = {}
-        self._locks: dict[tuple[str, str], threading.Lock] = {}
-        self._guard = threading.Lock()
-        self._client_factory = client_factory
-        self._client: tuple[LLMClient | None, str] | None = None
-
-    def client(self) -> tuple[LLMClient | None, str]:
-        if self._client is None:
-            self._client = self._client_factory()
-        return self._client
-
-    def _lock(self, key: tuple[str, str]) -> threading.Lock:
-        with self._guard:
-            return self._locks.setdefault(key, threading.Lock())
-
-    def _cached(self, key: tuple[str, str], refresh: bool, build: Callable[[], Entry]) -> Entry:
-        with self._lock(key):
-            e = self._entries.get(key)
-            if e is not None and not refresh and time.monotonic() - e.created < self.settings.ttl_s:
-                return e
-            e = build()
-            self._entries[key] = e
-            return e
-
-    def get(self, symbol: str, tf: str, refresh: bool = False) -> Entry:
-        return self._cached((symbol, tf), refresh, lambda: self._build(symbol, tf))
-
-    def market(self, refresh: bool = False) -> dict[str, Any]:
-        """Số liệu trang thị trường. Khóa cache không trùng mã nào vì mã không chứa dấu gạch dưới."""
-        return self._cached(("_market", "1D"), refresh, lambda: self._build_market(refresh)).view
-
-    def _build_market(self, refresh: bool) -> Entry:
-        st = self.settings
-        if st.no_market or not self.cfg.market.enabled:
-            raise DataUnavailable("Dữ liệu chỉ số đang tắt trong cấu hình máy chủ.", status=404)
-        view = load_market_overview(self.cfg, cache_dir=st.cache_dir, refresh=refresh)
-        notices = []
-        if self.cfg.data.offline:
-            notices.append(f"Dữ liệu đồng bộ đến phiên {pd.Timestamp(view['as_of']):%d/%m/%Y}; máy chủ không tự cập nhật giá.")
-        return Entry(time.monotonic(), {**view, "notices": notices}, {})
-
-    def _build(self, symbol: str, tf: str) -> Entry:
-        st = self.settings
-        start = DEFAULT_START[tf]
-        result = run_analysis(symbol, tf, self.cfg, start=start, cache_dir=st.cache_dir)
-        notices: list[str] = []
-        market = None
-        if tf != "1D":
-            notices.append(f"Khung {TF_LABEL[tf].lower()}: ngưỡng detector được hiệu chỉnh cho khung ngày, kết quả chỉ để tham khảo.")
-        elif not st.no_market and self.cfg.market.enabled:
-            market, _, _ = load_market(result, symbol, self.cfg, start=start, cache_dir=st.cache_dir,
-                                       demo=symbol == DEMO_SYMBOL)
-            if market is None:
-                notices.append("Không tải được dữ liệu chỉ số: bỏ qua bối cảnh thị trường.")
-        if symbol == DEMO_SYMBOL:
-            notices.append("Dữ liệu tổng hợp (DEMO), không phải giá thật.")
-        elif self.cfg.data.offline:
-            notices.append(f"Dữ liệu đồng bộ đến phiên {result.df.index[-1]:%d/%m/%Y}; máy chủ không tự cập nhật giá.")
-        payload = build_payload(result, symbol, market)
-        return Entry(time.monotonic(), build_view(result, payload, symbol, tf, notices), payload)
-
-    def previous_view(self, symbol: str) -> dict[str, Any] | None:
-        """View model tính đến phiên liền trước, để so sánh. Lỗi hoặc thiếu nến -> None (không so được)."""
-        def build() -> Entry:
-            try:
-                ohlcv = load_ohlcv(symbol, "1D", self.cfg, start=DEFAULT_START["1D"], cache_dir=self.settings.cache_dir)
-                res = analyze(ohlcv.iloc[:-1], self.cfg)
-                view = build_view(res, build_payload(res, symbol, None), symbol, "1D")
-            except Exception as exc:  # noqa: BLE001 - thiếu phần so sánh không được làm hỏng cả danh mục
-                logger.warning("Không so được %s với phiên trước: %s", symbol, exc)
-                view = {}
-            return Entry(time.monotonic(), view, {})
-        return self._cached((symbol, "_previous"), False, build).view or None
-
-    @property
-    def sma_periods(self) -> tuple[int, int]:
-        return self.cfg.market.sma_fast, self.cfg.market.sma_slow
-
-    def rule_catalog(self) -> list[dict[str, Any]]:
-        ind = self.cfg.indicators
-        return rule_catalog(self.sma_periods, (ind.ema_fast, ind.ema_slow))
-
-    def holding_row(self, h: Holding, rules: list[Rule]) -> dict[str, Any]:
-        catalog = self.rule_catalog()
-        try:
-            return holding_row(h, self.get(h.symbol, "1D").view, self.previous_view(h.symbol), rules, catalog, self.sma_periods)
-        except DataUnavailable as exc:
-            return error_row(h, str(exc), rules, catalog)
-
-    def explanation(self, symbol: str, tf: str) -> dict[str, Any]:
-        e = self.get(symbol, tf)
-        if e.explanation is None:
-            client, reason = self.client()
-            res = explain(e.payload, client, cache_dir=Path(self.settings.out_dir) / "llm_cache", no_llm_reason=reason)
-            e.explanation = {"source": res.source, "model": res.model, "attempts": res.attempts,
-                             "errors": res.errors if res.source == "template" else [], **res.explanation}
-        return e.explanation
-
-
-def default_client_factory(settings: Settings) -> Callable[[], tuple[LLMClient | None, str]]:
-    def make() -> tuple[LLMClient | None, str]:
-        if settings.no_llm:
-            return None, "tắt LLM (WYCKOFF_NO_LLM)"
-        try:
-            return AnthropicClient(model=settings.model), ""
-        except LLMError as exc:
-            logger.warning("Không dùng được LLM: %s", exc)
-            return None, str(exc)
-    return make
 
 
 class AskBody(BaseModel):
@@ -198,6 +42,15 @@ class HoldingFields(BaseModel):
 
 class NewHolding(HoldingFields):
     symbol: str = Field(min_length=1, max_length=10)
+
+
+class AlertToggle(BaseModel):
+    enabled: bool
+
+
+class SendAlert(BaseModel):
+    # Bắt buộc có thân JSON: trang web khác không gửi được yêu cầu này nếu không qua kiểm tra CORS
+    confirm: Literal[True]
 
 
 class RuleFields(BaseModel):
@@ -229,9 +82,7 @@ def _tf(raw: str) -> str:
 def create_app(settings: Settings | None = None,
                client_factory: Callable[[], tuple[LLMClient | None, str]] | None = None) -> FastAPI:
     settings = settings or Settings()
-    cfg = load_config(settings.config_path)
-    if settings.offline:
-        cfg = replace(cfg, data=replace(cfg.data, offline=True))
+    cfg = load_app_config(settings)
     store = AnalysisStore(settings, cfg, client_factory or default_client_factory(settings))
     app = FastAPI(title="Wyckoff Agent", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
     app.state.store = store
@@ -290,9 +141,7 @@ def create_app(settings: Settings | None = None,
 
     @app.get("/api/portfolio")
     def portfolio() -> dict[str, Any]:
-        notices = ["Dữ liệu đồng bộ theo lần gần nhất; máy chủ không tự cập nhật giá."] if cfg.data.offline else []
-        rules = holdings.rules()
-        return portfolio_view([store.holding_row(h, rules.get(h.symbol, [])) for h in holdings.list()], notices, store.rule_catalog())
+        return store.portfolio(holdings)
 
     @app.post("/api/portfolio", status_code=201)
     def add_holding(body: NewHolding) -> dict[str, Any]:
@@ -316,6 +165,33 @@ def create_app(settings: Settings | None = None,
         s = _symbol(symbol)
         if not holdings.delete(s):
             raise HTTPException(404, f"{s} không có trong danh mục.")
+
+    @app.put("/api/portfolio/{symbol}/alerts")
+    def set_holding_alerts(symbol: str, body: AlertToggle) -> dict[str, Any]:
+        s = _symbol(symbol)
+        if not holdings.set_alerts(s, body.enabled):
+            raise HTTPException(404, f"{s} không có trong danh mục.")
+        return {"symbol": s, "alerts_enabled": body.enabled}
+
+    @app.get("/api/alerts/preview")
+    def preview_alert() -> dict[str, Any]:
+        return {**current_summary(store.portfolio(holdings)), "configured": telegram_from_env() is not None}
+
+    @app.post("/api/alerts/send")
+    def send_alert(body: SendAlert) -> dict[str, Any]:
+        sender = telegram_from_env()
+        if sender is None:
+            raise HTTPException(503, "Chưa cấu hình Telegram: cần TELEGRAM_BOT_TOKEN và TELEGRAM_CHAT_ID trong file .env.")
+        summary = current_summary(store.portfolio(holdings))
+        if not summary["enabled_count"]:
+            raise HTTPException(422, "Không có mã nào đang bật thông báo.")
+        try:
+            for chunk in split_message(summary["text"]):
+                sender.send(chunk)
+        except AlertSendError as exc:
+            raise HTTPException(502, str(exc)) from None
+        holdings.log_alert(summary["as_of"], summary["text"])
+        return {"sent": True, "enabled_count": summary["enabled_count"]}
 
     @app.get("/api/rules/preview")
     def preview_rule(symbol: str, kind: str, value: float | None = None, side: Literal["profit", "loss"] | None = None) -> dict[str, Any]:

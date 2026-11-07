@@ -302,8 +302,18 @@ export type HoldingChange =
   | { kind: "stage" | "phase"; from: string; to: string }
   | { kind: "level"; level: LevelKind; price: number; direction: "below" | "above"; close: number; prev_close: number };
 
+export interface AlertPreview {
+  text: string;
+  as_of: string | null;
+  enabled_count: number;
+  muted_count: number;
+  muted: string[];
+  configured: boolean;
+}
+
 interface HoldingBase {
   symbol: string;
+  alerts_enabled: boolean;
   quantity: number;
   cost: number;
   bought_on: string;
