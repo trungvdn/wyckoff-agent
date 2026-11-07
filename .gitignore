@@ -6,6 +6,7 @@ __pycache__/
 # Dữ liệu và kết quả sinh ra (tải lại bằng vnstock / chạy lại run.py, backtest.py)
 cache/
 output/
+/data/
 
 # Môi trường, file tạm
 .env

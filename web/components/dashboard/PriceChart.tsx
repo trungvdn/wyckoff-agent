@@ -11,6 +11,7 @@ import {
   LineStyle,
   TickMarkType,
   createChart,
+  createSeriesMarkers,
   type BusinessDay,
   type IChartApi,
   type ISeriesApi,
@@ -81,11 +82,13 @@ function Readout({ d, index }: { d: Analysis; index: number }) {
       {d.symbol} · {d.timeframe === "1W" ? "Tuần" : "Ngày"} {fmtDateShort(bar.t, "full")}{seg && ` · ${phaseLabel(seg.phase)}`} · O {fmtPrice(bar.o)} H {fmtPrice(bar.h)} L {fmtPrice(bar.l)} C {fmtPrice(bar.c)}{" "}
       {chg != null && <span className={chg >= 0 ? "text-pos" : "text-neg"}>{fmtPct(chg)}</span>} · KL {fmtVolume(bar.v)}
       {bar.vr != null && ` (${fmtRatio(bar.vr)}× TB20)`}
+      {bar.ema_fast != null && <> · <span className="text-ema-fast">EMA{d.ema_periods[0]} {fmtPrice(bar.ema_fast)}</span></>}
+      {bar.ema_slow != null && <> · <span className="text-ema-slow">EMA{d.ema_periods[1]} {fmtPrice(bar.ema_slow)}</span></>}
     </span>
   );
 }
 
-function Legend() {
+function Legend({ periods }: { periods: [number, number] }) {
   return (
     <ul aria-label="Chú giải" className="m-0 flex list-none flex-wrap gap-4 p-0 text-[13px] text-muted">
       <li className="flex items-center gap-1.5"><span className="h-2.5 w-3 border border-pos bg-range" />Vùng giao dịch</li>
@@ -118,6 +121,9 @@ function Legend() {
         Tiềm năng
       </li>
       <li className="flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-muted" />Kháng cự / Hỗ trợ</li>
+      <li className="flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-ema-fast" />EMA{periods[0]}</li>
+      <li className="flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-ema-slow" />EMA{periods[1]}</li>
+      <li className="flex items-center gap-1.5"><span aria-hidden="true" className="flex gap-0.5"><span className="size-1.5 rounded-full bg-pos" /><span className="size-1.5 rounded-full bg-neg" /></span>EMA cắt nhau</li>
     </ul>
   );
 }
@@ -133,7 +139,7 @@ export function PriceChart({ data: d }: { data: Analysis }) {
   const cursorRef = useRef<number | null>(null);   // con trỏ điều khiển bằng bàn phím
   const [hover, setHover] = useState<number | null>(null);
   const [preset, setPreset] = useState<PresetId | null>("default");
-  const [showRejected, setShowRejected] = useState(true);
+  const [showRejected, setShowRejected] = useState(false);
   const n = d.bars.length;
 
   useEffect(() => {
@@ -200,6 +206,16 @@ export function PriceChart({ data: d }: { data: Analysis }) {
       }
     }
 
+    // EMA Cross: chỉ để tham khảo, không dùng trong phân loại Wyckoff
+    const emaLine = (name: string) => chart.addSeries(LineSeries, { color: color(name), lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    const emaFast = emaLine("ema-fast");
+    emaFast.setData(d.bars.flatMap((b) => (b.ema_fast != null ? [{ time: b.t as Time, value: b.ema_fast }] : [])));
+    const emaSlow = emaLine("ema-slow");
+    emaSlow.setData(d.bars.flatMap((b) => (b.ema_slow != null ? [{ time: b.t as Time, value: b.ema_slow }] : [])));
+    createSeriesMarkers(emaFast, d.ema_crosses.map((x) => ({
+      time: d.bars[x.i].t as Time, position: "inBar" as const, shape: "circle" as const, size: 0.5, color: color(x.up ? "pos" : "neg"),
+    })));
+
     const event = color("event");
     candles.attachPrimitive(new EventLabels(
       d.chart_events.filter((e) => showRejected || e.status !== "rejected").map((e) => ({ ...e, high: d.bars[e.i].h, low: d.bars[e.i].l })),
@@ -209,7 +225,9 @@ export function PriceChart({ data: d }: { data: Analysis }) {
     ));
     const stageColor = {
       up: color("pos"), down: color("neg"), up_potential: color("pos"), down_potential: color("neg"),
-      range: color("event-dim"), accumulation: color("event"), accumulation_developing: color("event"), reaccumulation: color("pos"), reaccumulation_developing: color("pos"), distribution: color("neg"), distribution_developing: color("neg"), none: color("pending"),
+      range: color("event-dim"), accumulation: color("event"), accumulation_developing: color("event"), accumulation_potential: color("event"),
+      reaccumulation: color("pos"), reaccumulation_developing: color("pos"), reaccumulation_potential: color("pos"),
+      distribution: color("neg"), distribution_developing: color("neg"), distribution_potential: color("neg"), none: color("pending"),
     };
     candles.attachPrimitive(new StageStrip(
       d.stage_segments.map((s) => ({ ...s, color: stageColor[s.kind], alpha: s.kind.endsWith("_potential") || s.kind.endsWith("_developing") ? POTENTIAL_STRIP_ALPHA : undefined })),
@@ -366,7 +384,7 @@ export function PriceChart({ data: d }: { data: Analysis }) {
           <Eyebrow id="chart-h">Biểu đồ giá &amp; khối lượng</Eyebrow>
           <Readout d={d} index={hover ?? n - 1} />
         </div>
-        <Legend />
+        <Legend periods={d.ema_periods} />
       </CardHeader>
 
       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">

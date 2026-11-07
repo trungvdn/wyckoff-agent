@@ -17,6 +17,8 @@ indicators:
   atr_period: 14
   vol_ma_period: 20
   sma_period: 50
+  ema_fast: 9                # EMA Cross trên biểu đồ, chỉ để tham khảo, không dùng trong phân loại
+  ema_slow: 21
   ratio_decimals: 2          # làm tròn vol_ratio/spread_atr/close_pos trước khi so ngưỡng
 
 stage:                       # giai đoạn / loại cấu trúc: chỉ ghi nhận, không đổi pha / tin cậy / backtest

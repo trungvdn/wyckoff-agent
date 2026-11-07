@@ -1,0 +1,8 @@
+# Chỉ đưa vào image đúng các file cần, để .env, cache/ và output/ không lọt vào.
+*
+!requirements-prod.txt
+!serve.py
+!config/
+!wyckoff/
+**/__pycache__
+**/*.pyc

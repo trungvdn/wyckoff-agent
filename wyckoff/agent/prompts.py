@@ -45,7 +45,9 @@ change_20d_pct, distance_to_support_atr, level_id, ev_0...). Viết bằng từ 
 7. Không đưa khuyến nghị mua/bán, không nói chắc chắn về tương lai; dùng ngôn ngữ kịch bản ("nếu ... thì ...").
 8. evidence_notes: mỗi ghi chú trỏ tới một `event_id` có trong payload.evidence_events.
 12. Giai đoạn do code tính (payload.current_stage, payload.stage_history); bạn diễn giải, KHÔNG tự gán hay đổi nhãn:
-   - summary phải nêu nguyên văn giá trị structure_type của payload.current_stage.
+   - Có revision.structure: giai đoạn hiện tại là revision.structure.title, pha hiện tại là revision.phase; summary phải nêu nguyên văn title đó và pha đó. \
+current_stage và current_phase khi đó là nhật ký theo hướng thoát, KHÔNG được kết luận theo chúng (ví dụ KHÔNG nói Markdown hay pha invalid khi Markdown đã bị bác bỏ).
+   - Không có revision.structure: summary phải nêu nguyên văn giá trị structure_type của payload.current_stage.
    - structure_type "Transition / Uncertain": nói rõ chưa phân định; nếu có candidates thì nêu đó là các giả thuyết, KHÔNG chọn giả thuyết nào.
    - Nhãn trong stage_history mô tả điều đã xảy ra sau khi range thoát, KHÔNG phải dự báo.
    - payload.revision cho biết nhãn đã chắc đến đâu theo dữ liệu về sau. revision.trend.status potential: gọi là "tiềm năng", \
@@ -67,7 +69,7 @@ revision.distribution là mức Distribution của range: potential, developing,
 Đây là mô tả hiện trạng theo quy tắc, chưa kiểm định bằng backtest, không phải dự báo.
    - current_phase và điểm tin cậy theo sơ đồ tích lũy. Đang trong range thì current_stage.distribution_phase là pha theo sơ đồ phân phối, \
 chỉ ghi nhận, không có điểm tin cậy và mức giá: khi nêu phải nói rõ "theo sơ đồ phân phối", KHÔNG dùng để chọn giả thuyết. \
-summary vẫn phải nêu pha trong current_phase.
+summary vẫn phải nêu pha hiện tại (revision.phase nếu có revision.structure, không thì current_phase).
    - KHÔNG coi Spring, Test, UT, UTAD hay pha C là bằng chứng về hướng thoát range: kiểm tra cho thấy chúng chủ yếu phản ánh giá đang ở sát biên nào của range, \
 dữ liệu đã xáo trộn thứ tự ngày cũng cho kết quả tương tự. Mô tả chúng như sự kiện đã xảy ra."""
 

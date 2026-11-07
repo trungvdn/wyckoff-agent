@@ -11,6 +11,8 @@ export interface Bar {
   v: number;
   vr: number | null; // volume / TB20
   vma: number | null; // TB20 volume
+  ema_fast: number | null; // EMA ngắn, chu kỳ trong ema_periods
+  ema_slow: number | null; // EMA dài
 }
 
 export interface ChartEvent {
@@ -50,7 +52,7 @@ export interface PhaseSegment {
 }
 
 export interface StageSegment {
-  kind: "up" | "down" | "up_potential" | "down_potential" | "range" | "accumulation" | "accumulation_developing" | "reaccumulation" | "reaccumulation_developing" | "distribution" | "distribution_developing" | "none";
+  kind: "up" | "down" | "up_potential" | "down_potential" | "range" | "accumulation" | "accumulation_developing" | "accumulation_potential" | "reaccumulation" | "reaccumulation_developing" | "reaccumulation_potential" | "distribution" | "distribution_developing" | "distribution_potential" | "none";
   label: string;
   i0: number;
   i1: number;
@@ -192,6 +194,8 @@ export interface Analysis {
   ranges: RangeBox[];
   phase_segments: PhaseSegment[];
   stage_segments: StageSegment[];
+  ema_periods: [number, number];
+  ema_crosses: { i: number; up: boolean }[]; // phiên EMA ngắn cắt EMA dài
   revision_changes: RevisionChange[];
   stage: StageInfo;
   phase: PhaseInfo;

@@ -20,6 +20,8 @@
   --color-pos-dim: #1F6F67;
   --color-on-pos: #062A26;
   --color-event: #F5B841;        /* sự kiện Wyckoff */
+  --color-ema-fast: #5AB4F0;     /* EMA ngắn */
+  --color-ema-slow: #C792EA;     /* EMA dài */
   --color-event-dim: #6B5320;
   --color-neg: #F87171;          /* nến giảm, vô hiệu */
   --color-neg-dim: #6E3434;

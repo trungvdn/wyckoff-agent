@@ -12,6 +12,7 @@ T = TypeVar("T")
 
 @dataclass(frozen=True)
 class DataConfig:
+    offline: bool = False               # chỉ đọc CSV đã đồng bộ, không gọi nguồn dữ liệu (server, docs/deploy.md)
     source: str = "VCI"                 # nguồn vnstock
     fallback_sources: tuple[str, ...] = ("KBS",)  # thử thêm khi nguồn chính thiếu lịch sử
     exchange: str = "HOSE"              # quyết định bước giá (tick)
@@ -31,6 +32,8 @@ class IndicatorConfig:
     atr_period: int = 14
     vol_ma_period: int = 20
     sma_period: int = 50
+    ema_fast: int = 9                 # EMA Cross trên biểu đồ, chỉ để tham khảo, không dùng trong phân loại
+    ema_slow: int = 21
     ratio_decimals: int = 2           # so ngưỡng trên vol_ratio/spread_atr/close_pos đã làm tròn 2 chữ số
 
 

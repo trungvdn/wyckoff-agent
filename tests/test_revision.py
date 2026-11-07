@@ -369,6 +369,86 @@ def test_range_box_extends_to_last_bar_while_structure_is_current() -> None:
     assert any("hồi phục nhanh" in x["text"] for x in view["events"])
 
 
+def test_view_has_ema_cross_data() -> None:
+    from wyckoff.agent.payload import build_payload
+    from wyckoff.web.viewmodel import build_view
+
+    res = analyze(_second_dip(4), _cfg())
+    v = build_view(res, build_payload(res, "X"), "X", "1D")
+    assert v["ema_periods"] == [9, 21]
+    assert v["bars"][0]["ema_fast"] is None and v["bars"][-1]["ema_fast"] is not None and v["bars"][19]["ema_slow"] is None
+    close = res.df["close"]
+    assert v["bars"][-1]["ema_slow"] == pytest.approx(close.ewm(span=21, adjust=False).mean().iloc[-1], abs=1e-3)
+    for x in v["ema_crosses"]:
+        now, before = v["bars"][x["i"]], v["bars"][x["i"] - 1]
+        assert (now["ema_fast"] > now["ema_slow"]) == x["up"] and (before["ema_fast"] > before["ema_slow"]) != x["up"]
+
+
+def test_stage_strip_follows_range_box() -> None:
+    from wyckoff.web.viewmodel import stage_segments
+
+    res = analyze(_second_dip(4), _cfg())
+    segs = stage_segments(res)
+    r = _exit_range(res)
+    at = lambda i: next(s for s in segs if s["i0"] <= i <= s["i1"])    # noqa: E731
+    assert at(r.start_idx)["kind"] == "range"                          # từ đầu range, không phải từ phiên xác nhận range
+    assert at(len(res.df) - 1) == at(r.start_idx + 1) or at(len(res.df) - 1)["kind"] == "range"   # còn là cấu trúc hiện tại: kéo đến phiên cuối
+    assert sorted((s["i0"], s["i1"]) for s in segs) == [(s["i0"], s["i1"]) for s in segs]
+    assert all(a["i1"] < b["i0"] for a, b in zip(segs, segs[1:]))      # không chồng lấn
+    assert not any(a["kind"] == b["kind"] and a["label"] == b["label"] for a, b in zip(segs, segs[1:]))   # cùng nhãn thì gộp
+
+
+def test_candidate_structure_overlays_strip() -> None:
+    from wyckoff.web.viewmodel import stage_segments
+
+    closes = DECLINE + _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 20.5, 20.6, 20.7, 20.6, 20.5, 20.6]
+    res = analyze(_frame(closes), _cfg())
+    rid = _exit_range(res).range_id
+    v = res.revision.primary_of(rid)[0]
+    assert v is not None
+    seg = next(s for s in stage_segments(res) if s["i0"] <= v.start_idx <= s["i1"])
+    if v.status == POTENTIAL:
+        assert seg["kind"] == "accumulation_potential" and seg["label"] == "Accumulation?"
+    assert seg["kind"] != "none"
+
+
+def test_explanation_follows_stage_card_when_structure_is_live() -> None:
+    from wyckoff.agent.payload import build_payload, stage_conclusion
+    from wyckoff.agent.report import template_explanation
+    from wyckoff.agent.validate import validate_explanation
+    from wyckoff.web.viewmodel import build_view
+
+    n = len(DECLINE) + len(_range_closes())
+    closes = DECLINE + _range_closes() + [19.2, 19.0, 18.9, 18.9, 19.0, 19.1, 19.2, 19.3, 20.8, 21.0]
+    res = analyze(_frame(closes, overrides={n + 8: 3.0}), _cfg())
+    payload = build_payload(res, "X")
+    assert payload["current_stage"]["stage"] == "Markdown" and payload["current_phase"]["phase"] != payload["revision"]["phase"]["phase"]
+    c = stage_conclusion(payload)
+    assert c is not None and payload["revision"]["trend"]["status"] == REJECTED
+    view = build_view(res, payload, "X", "1D")
+    t = template_explanation(payload)
+    assert c["title"] == view["stage"]["title"] and t["summary"].startswith(f"Giai đoạn: {c['title']}")
+    assert "Trending Down" not in t["summary"] and "vô hiệu" not in t["summary"] and "đã bị bác bỏ" in t["summary"]
+    assert validate_explanation(t, payload) == []
+    # Nêu nhãn của nhật ký thay vì kết luận của thẻ thì không qua kiểm tra
+    bad = {**t, "summary": t["summary"].replace(c["title"], "Trending Down")}
+    assert any("loại cấu trúc" in e for e in validate_explanation(bad, payload))
+    assert view["target_down"] is None                                  # mục tiêu theo cấu trúc còn hiệu lực, không theo xu hướng đã bác bỏ
+    assert c["phase"] != "C" or view["target"] is not None
+
+
+def test_explanation_keeps_log_view_without_live_structure() -> None:
+    from wyckoff.agent.payload import build_payload, stage_conclusion
+    from wyckoff.agent.report import template_explanation
+    from wyckoff.agent.validate import validate_explanation
+
+    res = analyze(_frame(_rebreak_closes(4)), _cfg())   # Markdown được mở lại, còn đứng
+    payload = build_payload(res, "X")
+    assert stage_conclusion(payload) is None
+    t = template_explanation(payload)
+    assert "Trending Down (Markdown tiềm năng)" in t["summary"] and validate_explanation(t, payload) == []
+
+
 def test_range_box_stops_when_markdown_stands() -> None:
     res = analyze(_frame(_rebreak_closes(4)), _cfg())    # Markdown được mở lại, còn đứng
     assert res.reopened_range_id() is None
@@ -1245,6 +1325,8 @@ def test_view_shows_live_structure_with_evidence_level() -> None:
     assert v["view"] == "range" and v["title"] == "Accumulation đang hình thành"
     assert v["evidence"]["level"] == "trung bình" and v["reason"] == "close quay lại support"
     assert stage_view(cur, [], rejected, {**live, "level": CONFIRMED})["title"] == "Initial Accumulation"
+    candidate = stage_view(cur, [], rejected, {**live, "level": POTENTIAL})
+    assert candidate["view"] == "range" and candidate["title"] == "Accumulation đang hình thành" and candidate["evidence"] is not None
     # Trong range: tên cấu trúc thay cho danh sách giả thuyết
     in_range = {**cur, "range_id": 1, "stage": None, "candidates": ["Accumulation", "Distribution"]}
     assert stage_view(in_range, [], None, live)["title"] == "Accumulation đang hình thành"

@@ -10,7 +10,7 @@ import os
 import re
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -46,6 +46,7 @@ class Settings:
     model: str = field(default_factory=lambda: os.environ.get("WYCKOFF_MODEL", DEFAULT_MODEL))
     no_llm: bool = field(default_factory=lambda: _env_flag("WYCKOFF_NO_LLM"))
     no_market: bool = field(default_factory=lambda: _env_flag("WYCKOFF_NO_MARKET"))
+    offline: bool = field(default_factory=lambda: _env_flag("WYCKOFF_OFFLINE"))
     ttl_s: float = field(default_factory=lambda: float(os.environ.get("WYCKOFF_TTL_S", "300")))
     default_symbol: str = field(default_factory=lambda: os.environ.get("WYCKOFF_DEFAULT_SYMBOL", "HPG"))
 
@@ -103,6 +104,8 @@ class AnalysisStore:
                 notices.append("Không tải được dữ liệu chỉ số: bỏ qua bối cảnh thị trường.")
         if symbol == DEMO_SYMBOL:
             notices.append("Dữ liệu tổng hợp (DEMO), không phải giá thật.")
+        elif self.cfg.data.offline:
+            notices.append(f"Dữ liệu đồng bộ đến phiên {result.df.index[-1]:%d/%m/%Y}; máy chủ không tự cập nhật giá.")
         payload = build_payload(result, symbol, market)
         return Entry(time.monotonic(), build_view(result, payload, symbol, tf, notices), payload)
 
@@ -153,6 +156,8 @@ def create_app(settings: Settings | None = None,
                client_factory: Callable[[], tuple[LLMClient | None, str]] | None = None) -> FastAPI:
     settings = settings or Settings()
     cfg = load_config(settings.config_path)
+    if settings.offline:
+        cfg = replace(cfg, data=replace(cfg.data, offline=True))
     store = AnalysisStore(settings, cfg, client_factory or default_client_factory(settings))
     app = FastAPI(title="Wyckoff Agent", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
     app.state.store = store
