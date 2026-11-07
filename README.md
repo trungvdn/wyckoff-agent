@@ -312,20 +312,21 @@ npm run build && npm start             # bản production (Node >= 20.9)
 |---|---|
 | `/` , `/co-phieu` | Chuyển tới mã mặc định (`NEXT_PUBLIC_DEFAULT_SYMBOL`, mặc định HPG) |
 | `/thi-truong` | Trang thị trường: xu hướng VN-Index, điều kiện đảo chiều, lợi suất, mức giảm so với đỉnh, biểu đồ có khối lượng |
+| `/danh-muc` | Danh mục nắm giữ: lãi/lỗ, giai đoạn, pha, thay đổi so với hôm qua, khoảng cách tới các mức giá. Lưu cục bộ tại `data/portfolio.db` (`WYCKOFF_PORTFOLIO_DB`) |
 | `/co-phieu/[symbol]` | Dashboard khung ngày; `?tf=1W` khung tuần. Mã viết thường hoặc `?tf=1D` / tf sai được chuyển về URL chuẩn |
 | mã sai định dạng | Trang 404 (`app/not-found.tsx`); mã không có dữ liệu / API lỗi: thông báo tại chỗ + Thử lại |
 
 Trang phân tích chạy trên server (gọi `WYCKOFF_API_URL`); `loading.tsx` hiện skeleton khi đổi mã / khung. Diễn giải agent,
 hỏi đáp và Phân tích lại chạy ở client qua `/api/*` (Next rewrite sang FastAPI, không cần CORS). Font IBM Plex tự host bằng
 `next/font`. Thành phần: `components/layout` (Sidebar, Header, Footer, trạng thái), `components/ui` (Card, Button, Skeleton),
-`components/dashboard` (PriceChart, StagePhaseCard, EventsCard, ScenarioCard, AskAgent...), `components/market` (MarketView, MarketChart).
+`components/dashboard` (PriceChart, StagePhaseCard, EventsCard, ScenarioCard, AskAgent...), `components/market` (MarketView, MarketChart), `components/portfolio` (PortfolioView, HoldingDialog).
 Biểu đồ dùng TradingView Lightweight Charts: con lăn / pinch để zoom, kéo để xem ngày cũ, nút 3T–Tất cả, phím mũi tên và +/−; API trả toàn bộ lịch sử đã phân tích (`bars`) kèm khung nhìn mặc định (`view_from`) và các đoạn pha (`phase_segments`), vẽ thành dải nền theo pha như báo cáo HTML. Kiểm tra: `npm run lint`, `npm run typecheck`, `npm run build`.
 
 Một màn hình cho một mã: biểu đồ nến + vùng giao dịch + nhãn sự kiện, pha hiện tại và các yếu tố tin cậy, bằng chứng
 từng sự kiện, kịch bản xác nhận / vô hiệu, mục tiêu Nhân–Quả, hỏi agent. Khung **Ngày** là khung gốc; **Tuần** gộp từ
 nến ngày (chỉ tham khảo); 15 phút / Giờ chưa hỗ trợ.
 
-- API (`/api/docs`): `GET /api/market`, `GET /api/analysis/{mã}?tf=1D|1W`, `GET /api/explanation/{mã}`, `POST /api/ask`. Phân tích được cache
+- API (`/api/docs`): `GET /api/market`, `GET|POST /api/portfolio`, `PUT|DELETE /api/portfolio/{mã}`, `GET /api/quote/{mã}`, `GET /api/analysis/{mã}?tf=1D|1W`, `GET /api/explanation/{mã}`, `POST /api/ask`. Phân tích được cache
   5 phút trong bộ nhớ (`WYCKOFF_TTL_S`); "Phân tích lại" bỏ cache và cập nhật dữ liệu tăng dần.
 - **Hỏi agent** (`wyckoff/agent/ask.py`): cùng nguyên tắc diễn giải – chỉ dùng số trong payload (số người dùng tự gõ trong
   câu hỏi được phép nhắc lại), không tên trường kỹ thuật, `event_ids` phải tồn tại; sai -> thử lại 1 lần -> trả lời theo mẫu.

@@ -159,10 +159,14 @@ Không cuộn ngang ở 375px (đã kiểm tra).
 | GET | `/api/health` | Trạng thái, LLM có sẵn không, mã mặc định |
 | GET | `/api/analysis/{symbol}?tf=1D\|1W&refresh=` | View model: `bars`, `view_from`, `ranges`, `chart_events`, `phase`, `confidence`, `events`, `levels`, `target`, `market`, `notices`, `warnings` |
 | GET | `/api/market?refresh=` | Trang thị trường: `close`, `change_pct`, `trend`, `conditions`, `returns`, `drawdown`, `bars`, `trend_segments`, `notices` |
+| GET | `/api/portfolio` | Danh mục: `summary`, `rows`, `as_of`, `notices`, `warnings` |
+| POST | `/api/portfolio` | `{symbol, quantity, cost, bought_on}`; 409 nếu mã đã có, 404 nếu mã không có dữ liệu |
+| PUT, DELETE | `/api/portfolio/{symbol}` | Sửa `{quantity, cost, bought_on}` hoặc xóa một mã |
+| GET | `/api/quote/{symbol}` | Giá đóng cửa gần nhất: `{symbol, close, as_of}` |
 | GET | `/api/explanation/{symbol}?tf=` | Diễn giải (LLM / cache / theo mẫu) theo schema prompt v4 |
 | POST | `/api/ask` | `{symbol, timeframe, question}` → `{answer, event_ids, source, model, errors}` |
 
-OpenAPI: `/api/docs`. Cấu hình qua biến môi trường `WYCKOFF_CONFIG`, `WYCKOFF_CACHE_DIR`, `WYCKOFF_OUT_DIR`,
+OpenAPI: `/api/docs`. Cấu hình qua biến môi trường `WYCKOFF_CONFIG`, `WYCKOFF_CACHE_DIR`, `WYCKOFF_OUT_DIR`, `WYCKOFF_PORTFOLIO_DB`,
 `WYCKOFF_MODEL`, `WYCKOFF_NO_LLM`, `WYCKOFF_NO_MARKET`, `WYCKOFF_TTL_S`, `WYCKOFF_DEFAULT_SYMBOL`; LLM cần `ANTHROPIC_API_KEY`.
 
 ## Trang thị trường
@@ -177,6 +181,20 @@ OpenAPI: `/api/docs`. Cấu hình qua biến môi trường `WYCKOFF_CONFIG`, `W
 | Thẻ điều kiện | Giảm: "Vì sao là xu hướng giảm" và "Điều kiện đảo chiều tăng" kèm khoảng cách và mốc gần nhất. Tăng: đối xứng. Đi ngang: điều kiện của cả hai chiều | Đây là quy tắc đặt nhãn của `market_regime`, trang ghi rõ chưa phải tín hiệu đã kiểm định |
 
 Chưa đưa pha Wyckoff của chỉ số vào trang vì ngưỡng detector chưa hiệu chỉnh cho chỉ số. `WYCKOFF_NO_MARKET` hoặc `market.enabled: false`: API trả 404, trang hiện thông báo lỗi.
+
+## Danh mục nắm giữ
+
+Đường dẫn `/danh-muc`, mã nguồn `app/danh-muc/` và `components/portfolio/`, logic và lưu trữ ở `wyckoff/portfolio.py`. Dữ liệu nằm trong SQLite (`WYCKOFF_PORTFOLIO_DB`, mặc định `data/portfolio.db`, đã có trong `.gitignore`) và không gửi cho LLM. Mỗi mã một dòng với giá vốn trung bình.
+
+| Khối | Nội dung | Ghi chú |
+|---|---|---|
+| Tổng quan | Giá trị, tổng vốn, lãi/lỗ tạm tính, thay đổi trong phiên | Mã không tải được dữ liệu không tính vào tổng, có cảnh báo trên đầu trang |
+| Thay đổi so với hôm qua | Giai đoạn, pha đổi; giá đóng cửa vừa cắt qua mức vô hiệu, xác nhận, hỗ trợ, kháng cự | So với kết quả phân tích tính đến phiên liền trước; cùng một giá thì giữ tên cụ thể hơn |
+| Bảng (thẻ khi ≤ 640px) | SL, giá vốn, giá, % trong phiên, lãi/lỗ, giai đoạn, pha, mức gần nhất ở dưới và trên giá | Mặc định mã có thay đổi trước, rồi theo giá trị; bấm tiêu đề Mã, Giá, Lãi/lỗ để đổi cách xếp |
+| Mức gần nhất | Ưu tiên mức vô hiệu, xác nhận; không có thì dùng hỗ trợ, kháng cự | Vô hiệu nằm trên giá: "đã thủng". Hỗ trợ nằm trên giá: "của range cũ" |
+| Form (`<dialog>`) | Mã, số lượng, giá vốn, ngày mua; xem trước tổng vốn và giá gần nhất | Nhận "2.000" và "22,40". Mã không có dữ liệu thì không lưu. Sửa không đổi được mã. Xóa có bước xác nhận |
+
+Lãi/lỗ chưa tính phí và thuế. Trang chỉ mô tả, không gợi ý mua bán; mức vô hiệu chưa phải tín hiệu bán đã kiểm chứng.
 
 ## Chưa làm (cần quyết định trước khi mở ra Internet)
 

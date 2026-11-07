@@ -287,3 +287,62 @@ export interface MarketOverview {
   trend_segments: { kind: TrendKind; i0: number; i1: number }[];
   notices: string[];
 }
+
+// Danh mục (wyckoff/portfolio.py). Giá: nghìn đồng; giá trị: đồng.
+export type LevelKind = "support" | "resistance" | "confirm" | "invalidate";
+
+export interface LevelRef {
+  kind: LevelKind;
+  price: number;
+  pct: number;
+  breached: boolean;
+}
+
+export type HoldingChange =
+  | { kind: "stage" | "phase"; from: string; to: string }
+  | { kind: "level"; level: LevelKind; price: number; direction: "below" | "above"; close: number; prev_close: number };
+
+interface HoldingBase {
+  symbol: string;
+  quantity: number;
+  cost: number;
+  bought_on: string;
+  cost_value: number;
+  changes: HoldingChange[] | null; // null: không so được với phiên trước
+}
+
+export interface HoldingOk extends HoldingBase {
+  error: null;
+  as_of: string;
+  price: number;
+  prev_close: number;
+  day_pct: number;
+  day_value: number;
+  value: number;
+  pl: number;
+  pl_pct: number;
+  stage: string;
+  phase: string;
+  below: LevelRef | null;
+  above: LevelRef | null;
+}
+
+export interface HoldingError extends HoldingBase {
+  error: string;
+}
+
+export type HoldingRow = HoldingOk | HoldingError;
+
+export interface Portfolio {
+  as_of: string | null;
+  summary: { count: number; value: number; cost: number; pl: number; pl_pct: number | null; day: number; day_pct: number | null };
+  rows: HoldingRow[];
+  notices: string[];
+  warnings: string[];
+}
+
+export interface HoldingFields {
+  quantity: number;
+  cost: number;
+  bought_on: string;
+}

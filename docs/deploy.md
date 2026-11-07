@@ -115,4 +115,4 @@ Mở `http://127.0.0.1:3000`. Bản này đọc `./cache`, tắt LLM và không 
 
 - **Chưa mở công khai được.** API không có xác thực và giới hạn tần suất, nên Cloudflare Access là lớp bảo vệ duy nhất (`docs/roadmap.md`, mục #10).
 - **Giấy phép vnstock.** Bản cập nhật 11/2026 (dự kiến hiệu lực 30/11/2026) không cho phân phối lại dữ liệu của nguồn và giới hạn bản Cộng đồng ở mục đích cá nhân, học tập, nghiên cứu. Đây là một lý do nữa để giữ trang riêng tư.
-- **Chỉ có một bản dữ liệu.** `data/cache` tạo lại được từ máy cá nhân, nên không cần sao lưu trên server.
+- **Chỉ có một bản dữ liệu.** `data/cache` tạo lại được từ máy cá nhân, nên không cần sao lưu trên server. Riêng danh mục nằm trong volume `portfolio` và không tạo lại được: tự sao lưu file `portfolio.db` nếu dùng trên server.

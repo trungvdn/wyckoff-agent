@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { cx } from "@/components/ui/Card";
-import { MARKET_HREF, SYMBOL_RE, TIMEFRAMES, UNSUPPORTED_TF_HINT, normalizeSymbol, parseTimeframe, symbolHref } from "@/lib/market";
+import { MARKET_HREF, PORTFOLIO_HREF, SYMBOL_RE, TIMEFRAMES, UNSUPPORTED_TF_HINT, normalizeSymbol, parseTimeframe, symbolHref } from "@/lib/market";
 import type { Timeframe } from "@/lib/types";
 import { useStatus } from "./StatusContext";
 
@@ -82,7 +82,7 @@ function TimeframeNav({ symbol, tf }: { symbol: string; tf: Timeframe }) {
   );
 }
 
-function StatusPill() {
+export function StatusPill() {
   const { status } = useStatus();
   const dot = { loading: "bg-event motion-safe:animate-blink", ok: "bg-pos", error: "bg-neg" }[status.kind];
   return (
@@ -98,6 +98,7 @@ export function Header() {
   const params = useParams<{ symbol?: string }>();
   const search = useSearchParams();
   const pathname = usePathname();
+  if (pathname === PORTFOLIO_HREF) return null; // trang danh mục tự có hàng tiêu đề, gồm pill trạng thái
   const symbol = params.symbol ? normalizeSymbol(params.symbol) : "";
   const tf = parseTimeframe(search.get("tf") ?? undefined);
   return (

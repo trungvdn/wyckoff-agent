@@ -19,6 +19,12 @@ export function fmtVolume(v: Num): string {
   return P0.format(v);
 }
 
+/** Số tiền (đồng) theo triệu: 159260000 -> "159,26 tr"; `signed` thêm dấu + cho số dương. */
+export function fmtMillion(vnd: Num, signed = false): string {
+  if (vnd == null) return "—";
+  return `${signed && vnd > 0 ? "+" : ""}${P2.format(vnd / 1e6)} tr`;
+}
+
 /** "2026-10-02" -> "02/10/2026" */
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";

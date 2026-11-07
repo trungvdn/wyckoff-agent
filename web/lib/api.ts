@@ -1,6 +1,6 @@
 // Gọi API FastAPI. Trên server: gọi thẳng WYCKOFF_API_URL. Trên trình duyệt: đường dẫn tương đối /api/*
 // được next.config.ts chuyển tiếp (rewrite) sang FastAPI, nên không cần CORS.
-import type { Analysis, AskResponse, Explanation, MarketOverview, Timeframe } from "./types";
+import type { Analysis, AskResponse, Explanation, HoldingFields, MarketOverview, Portfolio, Timeframe } from "./types";
 
 export const API_URL = process.env.WYCKOFF_API_URL || "http://127.0.0.1:8000";
 
@@ -38,6 +38,32 @@ export function getAnalysis(symbol: string, tf: Timeframe, opts: { refresh?: boo
 
 export function getMarket() {
   return request<MarketOverview>(`${base()}/api/market`, { cache: "no-store" });
+}
+
+export function getPortfolio() {
+  return request<Portfolio>(`${base()}/api/portfolio`, { cache: "no-store" });
+}
+
+const jsonBody = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export function addHolding(symbol: string, fields: HoldingFields) {
+  return request<unknown>(`${base()}/api/portfolio`, jsonBody("POST", { symbol, ...fields }));
+}
+
+export function updateHolding(symbol: string, fields: HoldingFields) {
+  return request<unknown>(`${base()}/api/portfolio/${enc(symbol)}`, jsonBody("PUT", fields));
+}
+
+export function deleteHolding(symbol: string) {
+  return request<unknown>(`${base()}/api/portfolio/${enc(symbol)}`, { method: "DELETE" });
+}
+
+export function getQuote(symbol: string, signal?: AbortSignal) {
+  return request<{ symbol: string; close: number; as_of: string }>(`${base()}/api/quote/${enc(symbol)}`, { cache: "no-store", signal });
 }
 
 export function getExplanation(symbol: string, tf: Timeframe, signal?: AbortSignal) {

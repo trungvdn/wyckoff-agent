@@ -23,6 +23,7 @@ services:
       # Dữ liệu do scripts/sync_cache.py đẩy lên; container chỉ đọc
       - ${WYCKOFF_CACHE_HOST_DIR:-./data/cache}:/data/cache:ro
       - llm_output:/data/output
+      - portfolio:/data/portfolio
     mem_limit: 768m
     networks: [backend]
 
@@ -56,6 +57,7 @@ services:
 
 volumes:
   llm_output:
+  portfolio:
 
 networks:
   backend:
