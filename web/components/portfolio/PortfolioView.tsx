@@ -72,6 +72,8 @@ function MoreButton({ symbol, onClick }: { symbol: string; onClick: () => void }
 }
 
 const TH = "border-y border-line px-3 py-2 font-medium whitespace-nowrap";
+/** Nút trên hàng tiêu đề: icon bên trái chữ, cao 44px, bo góc như các control khác. */
+const BAR_BUTTON = "inline-flex items-center justify-center gap-2";
 const TD = "border-b border-line px-3 py-2.5 align-top";
 
 function RuleButton({ row, selected, onPick, wide }: { row: HoldingRow; selected: boolean; onPick: () => void; wide?: boolean }) {
@@ -257,7 +259,13 @@ export function PortfolioView({ data }: { data: Portfolio }) {
   const s = data.summary;
 
   const addButton = (label: string, className?: string) => (
-    <Button onClick={() => setDialog({ value: null })} className={className}>{label}</Button>
+    <Button onClick={() => setDialog({ value: null })} className={cx(BAR_BUTTON, className)}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+      </svg>
+      {label}
+    </Button>
   );
   const edit = (r: HoldingRow) => setDialog({
     value: { symbol: r.symbol, quantity: r.quantity, cost: r.cost, bought_on: r.bought_on, close: isOk(r) ? r.price : null },
@@ -316,7 +324,14 @@ export function PortfolioView({ data }: { data: Portfolio }) {
       <SetStatus kind="ok" text={data.as_of ? `Dữ liệu đến ${fmtDate(data.as_of)}` : "Không tải được dữ liệu"} />
       <PageBar showStatus>
         <div className="flex gap-2 max-sm:w-full">
-          <Button variant="ghost" onClick={() => setAlertOpen(true)} className="max-sm:flex-1">Gửi thông báo</Button>
+          <Button variant="ghost" onClick={() => setAlertOpen(true)} className={cx(BAR_BUTTON, "max-sm:flex-1")}>
+            {/* Máy bay giấy: gửi qua Telegram */}
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-pos">
+              <path d="M21.5 3.5 10.5 13.5" />
+              <path d="M21.5 3.5 14.5 21l-4-7.5-7.5-4Z" />
+            </svg>
+            Gửi thông báo
+          </Button>
           {addButton("Thêm mã", "max-sm:flex-1")}
         </div>
       </PageBar>
