@@ -13,6 +13,7 @@ import { Card, cx } from "@/components/ui/Card";
 import { fmtDate, fmtInt, fmtMillion, fmtPct2, fmtPrice } from "@/lib/format";
 import { symbolHref } from "@/lib/market";
 import type { HoldingOk, HoldingRow, LevelRef, Portfolio, RuleItem } from "@/lib/types";
+import { AlertDialog, AlertToggle } from "./AlertControls";
 import { HoldingDialog, type DialogValue } from "./HoldingDialog";
 import { RuleDialog } from "./RuleDialog";
 import { AttentionIcon, RuleBadges, RulesInline, RulesPanel, attentionTint, ruleCount } from "./RulesPanel";
@@ -169,7 +170,10 @@ function HoldingsTable({ rows, picked, onPick, onEdit }: { rows: HoldingRow[]; p
                   <span className="flex flex-col items-start gap-1 empty:hidden"><RuleBadges row={r} /></span>
                 </div>
               </td>
-              <td className="border-b border-line py-1 pr-5 pl-1 text-right align-middle"><MoreButton symbol={r.symbol} onClick={() => onEdit(r)} /></td>
+              <td className="border-b border-line py-1 pr-3 pl-1 text-right align-middle whitespace-nowrap">
+                <AlertToggle symbol={r.symbol} enabled={r.alerts_enabled} />
+                <MoreButton symbol={r.symbol} onClick={() => onEdit(r)} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -197,6 +201,7 @@ function HoldingCards({ rows, picked, onPick, onEdit, onAddRule, onEditRule }: {
             </span>
             <div className="flex items-center gap-1">
               {isOk(r) && <span className={cx("font-mono text-[13px] font-semibold tabular-nums", signColor(r.pl))}>{fmtMillion(r.pl, true)} · {fmtPct2(r.pl_pct)}</span>}
+              <AlertToggle symbol={r.symbol} enabled={r.alerts_enabled} />
               <MoreButton symbol={r.symbol} onClick={() => onEdit(r)} />
             </div>
           </div>
@@ -244,6 +249,7 @@ export function PortfolioView({ data }: { data: Portfolio }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [dialog, setDialog] = useState<{ value: DialogValue | null } | null>(null);
+  const [alertOpen, setAlertOpen] = useState(false);
   const [ruleDialog, setRuleDialog] = useState<{ symbol: string; rule: RuleItem | null } | null>(null);
   const [pickedRaw, setPicked] = useState<string | null>(null);
   // Mặc định: mã đầu tiên trong danh mục. Mã đang chọn bị xóa thì quay về mã đầu tiên
@@ -308,7 +314,12 @@ export function PortfolioView({ data }: { data: Portfolio }) {
   return (
     <>
       <SetStatus kind="ok" text={data.as_of ? `Dữ liệu đến ${fmtDate(data.as_of)}` : "Không tải được dữ liệu"} />
-      <PageBar showStatus>{addButton("Thêm mã", "max-sm:ml-auto")}</PageBar>
+      <PageBar showStatus>
+        <div className="flex gap-2 max-sm:w-full">
+          <Button variant="ghost" onClick={() => setAlertOpen(true)} className="max-sm:flex-1">Gửi thông báo</Button>
+          {addButton("Thêm mã", "max-sm:flex-1")}
+        </div>
+      </PageBar>
       <Banner notices={data.notices} warnings={data.warnings} />
       <main className="flex flex-col gap-4 sm:gap-5">
         <section aria-label="Tổng quan danh mục" className="grid grid-cols-2 gap-3 sm:gap-5 wide:grid-cols-5">
@@ -333,6 +344,7 @@ export function PortfolioView({ data }: { data: Portfolio }) {
       </main>
       {form}
       {ruleForm}
+      {alertOpen && <AlertDialog onClose={() => setAlertOpen(false)} />}
     </>
   );
 }

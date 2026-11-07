@@ -312,7 +312,7 @@ npm run build && npm start             # bản production (Node >= 20.9)
 |---|---|
 | `/` , `/co-phieu` | Chuyển tới mã mặc định (`NEXT_PUBLIC_DEFAULT_SYMBOL`, mặc định HPG) |
 | `/thi-truong` | Trang thị trường: xu hướng VN-Index, điều kiện đảo chiều, lợi suất, mức giảm so với đỉnh, biểu đồ có khối lượng |
-| `/danh-muc` | Danh mục nắm giữ: lãi/lỗ, giai đoạn, pha, khoảng cách tới các mức giá, quy tắc bán của từng mã. Lưu cục bộ tại `data/portfolio.db` (`WYCKOFF_PORTFOLIO_DB`) |
+| `/danh-muc` | Danh mục nắm giữ: lãi/lỗ, giai đoạn, pha, khoảng cách tới các mức giá, quy tắc bán của từng mã; cảnh báo sau phiên qua Telegram ([hướng dẫn](docs/alerts.md)). Lưu cục bộ tại `data/portfolio.db` (`WYCKOFF_PORTFOLIO_DB`) |
 | `/co-phieu/[symbol]` | Dashboard khung ngày; `?tf=1W` khung tuần. Mã viết thường hoặc `?tf=1D` / tf sai được chuyển về URL chuẩn |
 | mã sai định dạng | Trang 404 (`app/not-found.tsx`); mã không có dữ liệu / API lỗi: thông báo tại chỗ + Thử lại |
 

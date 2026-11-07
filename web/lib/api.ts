@@ -1,6 +1,6 @@
 // Gọi API FastAPI. Trên server: gọi thẳng WYCKOFF_API_URL. Trên trình duyệt: đường dẫn tương đối /api/*
 // được next.config.ts chuyển tiếp (rewrite) sang FastAPI, nên không cần CORS.
-import type { Analysis, AskResponse, Explanation, HoldingFields, MarketOverview, Portfolio, RuleItem, Timeframe } from "./types";
+import type { AlertPreview, Analysis, AskResponse, Explanation, HoldingFields, MarketOverview, Portfolio, RuleItem, Timeframe } from "./types";
 
 export const API_URL = process.env.WYCKOFF_API_URL || "http://127.0.0.1:8000";
 
@@ -60,6 +60,18 @@ export function updateHolding(symbol: string, fields: HoldingFields) {
 
 export function deleteHolding(symbol: string) {
   return request<unknown>(`${base()}/api/portfolio/${enc(symbol)}`, { method: "DELETE" });
+}
+
+export function setHoldingAlerts(symbol: string, enabled: boolean) {
+  return request<unknown>(`${base()}/api/portfolio/${enc(symbol)}/alerts`, jsonBody("PUT", { enabled }));
+}
+
+export function getAlertPreview(signal?: AbortSignal) {
+  return request<AlertPreview>(`${base()}/api/alerts/preview`, { cache: "no-store", signal });
+}
+
+export function sendAlert() {
+  return request<unknown>(`${base()}/api/alerts/send`, jsonBody("POST", { confirm: true }));
 }
 
 export function addRule(symbol: string, kind: string, value: number | null, side: RuleItem["side"], sufficient: boolean) {
